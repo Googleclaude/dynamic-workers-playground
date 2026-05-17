@@ -15,6 +15,8 @@ import {
   Moon,
   Play,
   Plus,
+  ShieldCheck,
+  ShieldWarning,
   Sun,
   X,
 } from "@phosphor-icons/react";
@@ -118,6 +120,22 @@ function Modal({ open, onClose, title, size = "sm", children }: ModalProps) {
 
 type PlaygroundFiles = Record<string, string>;
 
+interface ComplianceViolation {
+  ruleId: string;
+  ruleLabel: string;
+  severity: "block" | "redact";
+  source: "file" | "response" | "log";
+  file?: string;
+  line?: number;
+  logIndex?: number;
+  preview: string;
+}
+
+interface ComplianceReport {
+  blocked: boolean;
+  violations: ComplianceViolation[];
+}
+
 interface RunResult {
   bundleInfo: {
     mainModule: string;
@@ -144,6 +162,7 @@ interface RunResult {
     runTime: number;
     totalTime: number;
   };
+  compliance?: ComplianceReport;
 }
 
 interface GitHubImportResult {
@@ -151,7 +170,7 @@ interface GitHubImportResult {
   files?: PlaygroundFiles;
 }
 
-type StatusTone = "idle" | "running" | "success" | "error";
+type StatusTone = "idle" | "running" | "success" | "error" | "blocked";
 
 const EXAMPLES: Array<{
   id: string;
@@ -373,8 +392,17 @@ function getContentType(headers: Record<string, string>) {
 function statusClassName(status: StatusTone) {
   if (status === "success") return "success";
   if (status === "error") return "error";
+  if (status === "blocked") return "blocked";
   if (status === "running") return "loading";
   return "idle";
+}
+
+function statusDotColor(tone: StatusTone) {
+  if (tone === "success") return "#16a34a";
+  if (tone === "error") return "#dc2626";
+  if (tone === "blocked") return "#7c3aed";
+  if (tone === "running") return "#f59e0b";
+  return "#9ca3af";
 }
 
 function consolePrefix(level: string) {
@@ -403,6 +431,85 @@ function useDarkMode() {
   }
 
   return { dark, toggle };
+}
+
+interface StatusIndicatorProps {
+  status: { tone: StatusTone; label: string };
+  report: ComplianceReport | null;
+  onOpenReport: () => void;
+}
+
+function StatusIndicator({ status, report, onOpenReport }: StatusIndicatorProps) {
+  const hasReport = report !== null && report.violations.length > 0;
+
+  const inner = (
+    <>
+      <span
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: "50%",
+          display: "inline-block",
+          backgroundColor: statusDotColor(status.tone),
+        }}
+      />
+      <span
+        style={{
+          fontSize: 13,
+          color: "var(--text-color-kumo-subdued)",
+        }}
+      >
+        {status.label}
+      </span>
+      {report !== null && report.violations.length > 0 ? (
+        report.blocked ? (
+          <ShieldWarning
+            size={14}
+            weight="fill"
+            style={{ color: "#7c3aed" }}
+          />
+        ) : (
+          <ShieldCheck
+            size={14}
+            style={{ color: "var(--text-color-kumo-subdued)" }}
+          />
+        )
+      ) : null}
+    </>
+  );
+
+  if (!hasReport) {
+    return (
+      <div
+        aria-live="polite"
+        style={{ display: "flex", alignItems: "center", gap: 8 }}
+      >
+        {inner}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      aria-live="polite"
+      onClick={onOpenReport}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        background: "none",
+        border: "none",
+        padding: "4px 6px",
+        margin: 0,
+        borderRadius: 6,
+        cursor: "pointer",
+        color: "inherit",
+      }}
+    >
+      {inner}
+    </button>
+  );
 }
 
 function LayersLogo() {
@@ -480,6 +587,9 @@ export function App() {
   const [importing, setImporting] = useState(false);
   const [addFileOpen, setAddFileOpen] = useState(false);
   const [githubOpen, setGithubOpen] = useState(false);
+  const [complianceOpen, setComplianceOpen] = useState(false);
+  const [complianceReport, setComplianceReport] =
+    useState<ComplianceReport | null>(null);
   const [addFileName, setAddFileName] = useState("");
   const [githubUrl, setGitHubUrl] = useState("");
 
@@ -491,6 +601,7 @@ export function App() {
     setCurrentFile(inferPrimaryFile(nextFiles));
     setResult(null);
     setError(null);
+    setComplianceReport(null);
     setStatus({ tone: "idle", label: "Ready" });
   }
 
@@ -628,6 +739,7 @@ export function App() {
   async function runWorker() {
     setRunning(true);
     setError(null);
+    setComplianceReport(null);
     setStatus({ tone: "running", label: "Bundling..." });
 
     try {
@@ -654,15 +766,40 @@ export function App() {
       const payload = rawPayload as RunResult & {
         error?: string;
         stack?: string;
+        compliance?: ComplianceReport;
       };
+
       if (!response.ok || payload.error) {
+        if (payload.compliance?.blocked) {
+          setResult(null);
+          setComplianceReport(payload.compliance);
+          setError({
+            message:
+              payload.error || "Compliance check blocked this run.",
+            stack: payload.stack,
+          });
+          setStatus({
+            tone: "blocked",
+            label: `Blocked — ${payload.compliance.violations.length} issue${payload.compliance.violations.length === 1 ? "" : "s"}`,
+          });
+          setComplianceOpen(true);
+          return;
+        }
         throw new Error(payload.error || "Failed to run worker.");
       }
 
       setResult(payload);
+      const report = payload.compliance ?? null;
+      setComplianceReport(report);
 
+      const redactedCount = report?.violations.length ?? 0;
       if (payload.workerError) {
         setStatus({ tone: "error", label: "Runtime Error" });
+      } else if (redactedCount > 0) {
+        setStatus({
+          tone: "success",
+          label: `Success — ${redactedCount} redacted`,
+        });
       } else {
         setStatus({ tone: "success", label: "Success" });
       }
@@ -791,35 +928,12 @@ export function App() {
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div
-              aria-live="polite"
-              style={{ display: "flex", alignItems: "center", gap: 8 }}
-            >
-              <span
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: "50%",
-                  display: "inline-block",
-                  backgroundColor:
-                    status.tone === "success"
-                      ? "#16a34a"
-                      : status.tone === "error"
-                        ? "#dc2626"
-                        : status.tone === "running"
-                          ? "#f59e0b"
-                          : "#9ca3af",
-                }}
-              />
-              <span
-                style={{
-                  fontSize: 13,
-                  color: "var(--text-color-kumo-subdued)",
-                }}
-              >
-                {status.label}
-              </span>
-            </div>
+            <StatusIndicator
+              status={status}
+              report={complianceReport}
+              onOpenReport={() => setComplianceOpen(true)}
+            />
+
 
             <button
               type="button"
@@ -1617,6 +1731,229 @@ export function App() {
           </Button>
         </div>
       </Modal>
+
+      {/* Compliance modal */}
+      <ComplianceModal
+        open={complianceOpen}
+        onClose={() => setComplianceOpen(false)}
+        report={complianceReport}
+      />
+    </div>
+  );
+}
+
+interface ComplianceModalProps {
+  open: boolean;
+  onClose: () => void;
+  report: ComplianceReport | null;
+}
+
+function ComplianceModal({ open, onClose, report }: ComplianceModalProps) {
+  const fileViolations =
+    report?.violations.filter((v) => v.source === "file") ?? [];
+  const runtimeViolations =
+    report?.violations.filter((v) => v.source !== "file") ?? [];
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={
+        <>
+          {report?.blocked ? (
+            <ShieldWarning
+              size={18}
+              weight="fill"
+              style={{ color: "#7c3aed" }}
+            />
+          ) : (
+            <ShieldCheck size={18} weight="fill" style={{ color: "#16a34a" }} />
+          )}
+          Compliance report
+        </>
+      }
+      size="lg"
+    >
+      {!report ? (
+        <p
+          style={{
+            margin: 0,
+            fontSize: 13,
+            color: "var(--text-color-kumo-subdued)",
+          }}
+        >
+          No compliance data yet. Run a worker to see scan results.
+        </p>
+      ) : (
+        <>
+          {report.blocked ? (
+            <div
+              style={{
+                background: "rgba(124, 58, 237, 0.08)",
+                border: "1px solid rgba(124, 58, 237, 0.35)",
+                color: "#6d28d9",
+                padding: "10px 12px",
+                borderRadius: 8,
+                fontSize: 13,
+              }}
+            >
+              Worker execution was blocked. Remove the highlighted secrets and
+              run again.
+            </div>
+          ) : (
+            <p
+              style={{
+                margin: 0,
+                fontSize: 13,
+                color: "var(--text-color-kumo-subdued)",
+              }}
+            >
+              {report.violations.length === 0
+                ? "No PII or secrets detected."
+                : `${report.violations.length} pattern${report.violations.length === 1 ? "" : "s"} detected and redacted in the displayed output.`}
+            </p>
+          )}
+
+          <ComplianceViolationList
+            heading="Source files"
+            items={fileViolations}
+          />
+          <ComplianceViolationList
+            heading="Runtime output"
+            items={runtimeViolations}
+          />
+        </>
+      )}
+
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <Button variant="primary" onClick={onClose}>
+          Close
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
+function ComplianceViolationList({
+  heading,
+  items,
+}: {
+  heading: string;
+  items: ComplianceViolation[];
+}) {
+  if (items.length === 0) return null;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <p
+        style={{
+          margin: 0,
+          fontSize: 11,
+          fontWeight: 600,
+          textTransform: "uppercase",
+          letterSpacing: "0.05em",
+          color: "var(--text-color-kumo-subdued)",
+        }}
+      >
+        {heading} ({items.length})
+      </p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {items.map((v, i) => (
+          <div
+            key={`${v.ruleId}-${v.source}-${v.file ?? v.logIndex ?? "x"}-${v.line ?? i}`}
+            style={{
+              border: "1px solid var(--color-kumo-border, #e5e7eb)",
+              borderRadius: 6,
+              padding: 10,
+              display: "flex",
+              flexDirection: "column",
+              gap: 4,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                flexWrap: "wrap",
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.04em",
+                  padding: "2px 6px",
+                  borderRadius: 4,
+                  background:
+                    v.severity === "block"
+                      ? "rgba(220, 38, 38, 0.12)"
+                      : "rgba(217, 119, 6, 0.12)",
+                  color: v.severity === "block" ? "#b91c1c" : "#b45309",
+                }}
+              >
+                {v.severity}
+              </span>
+              <span
+                style={{
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: "var(--text-color-kumo-default)",
+                }}
+              >
+                {v.ruleLabel}
+              </span>
+              {v.file ? (
+                <span
+                  style={{
+                    fontSize: 12,
+                    fontFamily: "monospace",
+                    color: "var(--text-color-kumo-subdued)",
+                  }}
+                >
+                  {v.file}
+                  {v.line ? `:${v.line}` : ""}
+                </span>
+              ) : v.source === "log" && v.logIndex !== undefined ? (
+                <span
+                  style={{
+                    fontSize: 12,
+                    fontFamily: "monospace",
+                    color: "var(--text-color-kumo-subdued)",
+                  }}
+                >
+                  log #{v.logIndex + 1}
+                </span>
+              ) : v.source === "response" ? (
+                <span
+                  style={{
+                    fontSize: 12,
+                    fontFamily: "monospace",
+                    color: "var(--text-color-kumo-subdued)",
+                  }}
+                >
+                  response body
+                </span>
+              ) : null}
+            </div>
+            <pre
+              style={{
+                margin: 0,
+                fontSize: 11,
+                fontFamily: "monospace",
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+                color: "var(--text-color-kumo-default)",
+                background: "var(--color-kumo-surface)",
+                borderRadius: 4,
+                padding: "6px 8px",
+              }}
+            >
+              {v.preview}
+            </pre>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
