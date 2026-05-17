@@ -1,6 +1,11 @@
 import { exports } from "cloudflare:workers";
 import { createWorker } from "@cloudflare/worker-bundler";
 import { handleGitHubImport } from "./github";
+import {
+  redactString,
+  scanFiles,
+  type ComplianceViolation,
+} from "./compliance";
 
 export { DynamicWorkerTail, LogSession } from "./logging";
 
@@ -67,6 +72,7 @@ async function executeWorker(
   worker: WorkerStub,
   state: WorkerState,
   workerId: string,
+  sourceWarnings: ComplianceViolation[],
   pathname = "/"
 ): Promise<Response> {
   const entrypoint = worker.getEntrypoint() as Fetcher & {
@@ -112,11 +118,31 @@ async function executeWorker(
   }
 
   const runTime = Date.now() - runStart;
-  const logs = await logWaiter.getLogs(1000);
+  const rawLogs = (await logWaiter.getLogs(1000)) as Array<{
+    level: string;
+    message: string;
+    timestamp: number;
+  }>;
 
   const headers: Record<string, string> = {};
   workerResponse.headers.forEach((value, key) => {
     headers[key] = value;
+  });
+
+  const runtimeViolations: ComplianceViolation[] = [];
+
+  const { redacted: redactedBody, violations: bodyViolations } = redactString(
+    responseBody,
+    "response"
+  );
+  runtimeViolations.push(...bodyViolations);
+
+  const redactedLogs = rawLogs.map((log, index) => {
+    const { redacted, violations } = redactString(log.message, "log", {
+      logIndex: index,
+    });
+    runtimeViolations.push(...violations);
+    return { ...log, message: redacted };
   });
 
   return Response.json({
@@ -128,15 +154,19 @@ async function executeWorker(
     response: {
       status: workerResponse.status,
       headers,
-      body: responseBody,
+      body: redactedBody,
     },
     workerError,
-    logs,
+    logs: redactedLogs,
     timing: {
       buildTime,
       loadTime,
       runTime,
       totalTime: buildTime + loadTime + runTime,
+    },
+    compliance: {
+      blocked: false,
+      violations: [...sourceWarnings, ...runtimeViolations],
     },
   });
 }
@@ -209,6 +239,23 @@ export default {
         }
 
         const normalizedFiles = normalizeFiles(files);
+
+        const allViolations = scanFiles(normalizedFiles);
+        const blocking = allViolations.filter((v) => v.severity === "block");
+        if (blocking.length > 0) {
+          return Response.json(
+            {
+              error:
+                "Compliance check failed: secrets detected in source files.",
+              compliance: { blocked: true, violations: blocking },
+            },
+            { status: 400 }
+          );
+        }
+        const sourceWarnings = allViolations.filter(
+          (v) => v.severity === "redact"
+        );
+
         const workerId = await createWorkerId(normalizedFiles, options);
         const state: WorkerState = {
           bundleInfo: null,
@@ -252,7 +299,13 @@ export default {
           };
         });
 
-        return executeWorker(worker, state, workerId, pathname ?? "/");
+        return executeWorker(
+          worker,
+          state,
+          workerId,
+          sourceWarnings,
+          pathname ?? "/"
+        );
       } catch (error) {
         return buildErrorResponse(error);
       }
