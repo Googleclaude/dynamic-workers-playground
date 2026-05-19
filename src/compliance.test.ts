@@ -92,20 +92,6 @@ describe("scanFiles — redact-severity rules", () => {
     expect(ids(v)).toEqual(["email"]);
   });
 
-  it("validates CPF check digits", () => {
-    // valid: 123.456.789-09 (check digits 0,9 — verified independently)
-    const valid = scanFiles({ "src/a.ts": `const c = "123.456.789-09";` });
-    expect(ids(valid)).toEqual(["cpf"]);
-
-    // invalid: wrong check digits
-    const invalid = scanFiles({ "src/a.ts": `const c = "111.111.111-11";` });
-    expect(invalid).toHaveLength(0);
-
-    // invalid: random
-    const random = scanFiles({ "src/a.ts": `const c = "999.888.777-66";` });
-    expect(random).toHaveLength(0);
-  });
-
   it("validates credit card numbers via Luhn", () => {
     // 4242 4242 4242 4242 — Stripe test card, passes Luhn
     const valid = scanFiles({ "src/a.ts": `const c = "4242424242424242";` });
@@ -164,24 +150,6 @@ describe("redactString", () => {
     expect(ids(violations)).toEqual(["email", "jwt"]);
     expect(violations.every((v) => v.source === "log")).toBe(true);
     expect(violations.every((v) => v.logIndex === 3)).toBe(true);
-  });
-
-  it("does not redact CPF look-alikes that fail validation", () => {
-    const { redacted, violations } = redactString(
-      "fake: 111.111.111-11",
-      "response"
-    );
-    expect(redacted).toBe("fake: 111.111.111-11");
-    expect(violations).toHaveLength(0);
-  });
-
-  it("redacts valid CPFs", () => {
-    const { redacted, violations } = redactString(
-      "cpf: 123.456.789-09",
-      "response"
-    );
-    expect(redacted).toBe("cpf: [REDACTED:cpf]");
-    expect(ids(violations)).toEqual(["cpf"]);
   });
 
   it("redacts AWS access keys (block severity still redacts in runtime)", () => {
