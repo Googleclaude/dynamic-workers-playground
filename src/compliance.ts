@@ -157,6 +157,20 @@ export function scanFiles(files: Record<string, string>): ComplianceViolation[] 
   const violations: ComplianceViolation[] = [];
 
   for (const [file, contents] of Object.entries(files)) {
+    for (const rule of RULES) {
+      for (const match of file.matchAll(freshPattern(rule))) {
+        if (rule.validate && !rule.validate(match[0])) continue;
+        violations.push({
+          ruleId: rule.id,
+          ruleLabel: rule.label,
+          severity: rule.severity,
+          source: "file",
+          file,
+          preview: buildPreview(file, rule),
+        });
+      }
+    }
+
     if (typeof contents !== "string" || contents.length === 0) continue;
 
     for (const rule of RULES) {

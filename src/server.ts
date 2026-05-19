@@ -161,12 +161,16 @@ async function executeWorker(
     }
   }
 
+  const safeBundleInfo = bundleInfo
+    ? {
+        mainModule: redactInPlace(bundleInfo.mainModule),
+        modules: bundleInfo.modules.map(redactInPlace),
+        warnings: bundleInfo.warnings.map(redactInPlace),
+      }
+    : { mainModule: "(cached)", modules: [], warnings: [] };
+
   return Response.json({
-    bundleInfo: bundleInfo ?? {
-      mainModule: "(cached)",
-      modules: [],
-      warnings: [],
-    },
+    bundleInfo: safeBundleInfo,
     response: {
       status: workerResponse.status,
       headers: redactedHeaders,
@@ -182,17 +186,29 @@ async function executeWorker(
     },
     compliance: {
       blocked: false,
-      violations: [...sourceWarnings, ...runtimeViolations],
+      violations: [...sourceWarnings, ...runtimeViolations].map(
+        redactViolationFile
+      ),
     },
   });
 }
 
+function redactInPlace(value: string): string {
+  return redactString(value, "response").redacted;
+}
+
+function redactViolationFile(v: ComplianceViolation): ComplianceViolation {
+  return v.file ? { ...v, file: redactInPlace(v.file) } : v;
+}
+
 function buildErrorResponse(error: unknown): Response {
   console.error("Error in dynamic-workers-playground:", error);
+  const rawMessage = error instanceof Error ? error.message : "Unknown error";
+  const rawStack = error instanceof Error ? error.stack : undefined;
   return Response.json(
     {
-      error: error instanceof Error ? error.message : "Unknown error",
-      stack: error instanceof Error ? error.stack : undefined,
+      error: redactInPlace(rawMessage),
+      stack: rawStack ? redactInPlace(rawStack) : undefined,
     },
     { status: 500 }
   );
@@ -263,7 +279,10 @@ export default {
             {
               error:
                 "Compliance check failed: secrets detected in source files.",
-              compliance: { blocked: true, violations: blocking },
+              compliance: {
+                blocked: true,
+                violations: blocking.map(redactViolationFile),
+              },
             },
             { status: 400 }
           );
