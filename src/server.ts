@@ -6,6 +6,7 @@ import {
   scanFiles,
   type ComplianceViolation,
 } from "./compliance";
+import { methodAllowsBody, normalizeMethod } from "./request-options";
 
 export { DynamicWorkerTail, LogSession } from "./logging";
 
@@ -101,15 +102,13 @@ async function executeWorker(
 
   const runStart = Date.now();
   const { pathname, method, body } = requestOptions;
-  const methodAllowsBody = method !== "GET" && method !== "HEAD" && method !== "OPTIONS";
+  const hasBody = methodAllowsBody(method) && body.length > 0;
   const request = new Request(
     `https://example.com${pathname.startsWith("/") ? pathname : `/${pathname}`}`,
     {
       method,
-      headers: methodAllowsBody && body
-        ? { "content-type": "application/json" }
-        : undefined,
-      body: methodAllowsBody && body ? body : undefined,
+      headers: hasBody ? { "content-type": "application/json" } : undefined,
+      body: hasBody ? body : undefined,
     }
   );
 
@@ -356,23 +355,9 @@ export default {
           };
         });
 
-        const allowedMethods = new Set([
-          "GET",
-          "POST",
-          "PUT",
-          "PATCH",
-          "DELETE",
-          "OPTIONS",
-          "HEAD",
-        ]);
-        const normalizedMethod =
-          method && allowedMethods.has(method.toUpperCase())
-            ? method.toUpperCase()
-            : "GET";
-
         return executeWorker(worker, state, workerId, sourceWarnings, {
           pathname: pathname ?? "/",
-          method: normalizedMethod,
+          method: normalizeMethod(method),
           body: typeof requestBody === "string" ? requestBody : "",
         });
       } catch (error) {
