@@ -1,0 +1,23 @@
+{
+	"title": "We respect your privacy",
+	"description": "This playground stores your theme and language preferences in your browser only when you allow it. The source code and GitHub URLs you submit are processed in memory to execute your Worker. Learn more in our <1>Privacy Policy</1>.",
+	"acceptAll": "Accept all",
+	"rejectAll": "Reject non-essential",
+	"customize": "Customize",
+	"savePreferences": "Save preferences",
+	"categories": {
+		"necessary": {
+			"label": "Strictly necessary",
+			"description": "Required for the playground to function. Includes the consent record itself.",
+			"alwaysOn": "Always on"
+		},
+		"functional": {
+			"label": "Functional",
+			"description": "Remembers your theme (light/dark) and language preferences across visits."
+		},
+		"preferences": {
+			"label": "Preferences",
+			"description": "Reserved for future user-interface preferences. Currently unused."
+		}
+	}
+}

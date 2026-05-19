@@ -1,0 +1,18 @@
+{
+	"title": "Manage Consent",
+	"intro": "Review and update your privacy choices for this site. You can revoke consent at any time.",
+	"currentChoices": "Current choices",
+	"recordedAt": "Recorded at",
+	"method": {
+		"label": "Method",
+		"accept-all": "Accepted all",
+		"reject-all": "Rejected non-essential",
+		"custom": "Custom selection"
+	},
+	"noRecord": "No consent record found. The banner will reappear so you can choose.",
+	"save": "Save choices",
+	"revoke": "Revoke consent and clear stored choices",
+	"revokeConfirm": "Are you sure? Your stored preferences will be cleared and the consent banner will reappear.",
+	"saved": "Preferences saved.",
+	"revoked": "Consent record cleared."
+}
