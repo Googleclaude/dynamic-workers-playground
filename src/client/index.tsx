@@ -568,6 +568,66 @@ function LayersLogo() {
   );
 }
 
+const STORAGE_KEY = "dynamic-workers-playground:state:v1";
+
+interface PersistedState {
+  files: PlaygroundFiles;
+  currentFile: string;
+}
+
+function loadPersistedState(): PersistedState | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      Array.isArray(parsed) ||
+      !("files" in parsed) ||
+      !("currentFile" in parsed)
+    ) {
+      return null;
+    }
+    const candidate = parsed as { files: unknown; currentFile: unknown };
+    if (
+      !candidate.files ||
+      typeof candidate.files !== "object" ||
+      Array.isArray(candidate.files)
+    ) {
+      return null;
+    }
+    const files: PlaygroundFiles = {};
+    for (const [k, v] of Object.entries(candidate.files)) {
+      if (typeof k !== "string" || typeof v !== "string") return null;
+      files[k] = v;
+    }
+    if (typeof candidate.currentFile !== "string") return null;
+    return { files, currentFile: candidate.currentFile };
+  } catch {
+    return null;
+  }
+}
+
+function savePersistedState(state: PersistedState) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // localStorage may be full or disabled — fail silently.
+  }
+}
+
+function clearPersistedState() {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 function PoweredByWorkers() {
   return (
     <div
@@ -605,11 +665,15 @@ function PoweredByWorkers() {
 export function App() {
   const { dark, toggle: toggleDark } = useDarkMode();
   const initialExample = EXAMPLES[0];
-  const [files, setFiles] = useState<PlaygroundFiles>({
-    ...initialExample.files,
-  });
+  const persisted =
+    typeof window !== "undefined" && !window.location.hash
+      ? loadPersistedState()
+      : null;
+  const [files, setFiles] = useState<PlaygroundFiles>(
+    persisted?.files ?? { ...initialExample.files }
+  );
   const [currentFile, setCurrentFile] = useState(
-    inferPrimaryFile(initialExample.files)
+    persisted?.currentFile ?? inferPrimaryFile(initialExample.files)
   );
   const [bundle, setBundle] = useState(true);
   const [minify, setMinify] = useState(false);
@@ -650,6 +714,31 @@ export function App() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (currentFile) {
+      savePersistedState({ files, currentFile });
+    }
+  }, [files, currentFile]);
+
+  function resetToExample() {
+    if (
+      !window.confirm(
+        "Reset playground to the default example? Your current files will be cleared."
+      )
+    ) {
+      return;
+    }
+    clearPersistedState();
+    if (window.location.hash) {
+      window.history.replaceState(
+        null,
+        "",
+        `${window.location.pathname}${window.location.search}`
+      );
+    }
+    applyFiles({ ...EXAMPLES[0].files });
+  }
 
   async function copyShareLink() {
     try {
@@ -1104,6 +1193,9 @@ export function App() {
                         {example.label}
                       </DropdownMenu.Item>
                     ))}
+                    <DropdownMenu.Item onClick={resetToExample}>
+                      Reset (clear saved state)
+                    </DropdownMenu.Item>
                   </DropdownMenu.Content>
                 </DropdownMenu>
 
