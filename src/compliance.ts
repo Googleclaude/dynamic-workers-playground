@@ -22,23 +22,6 @@ export interface ComplianceViolation {
   preview: string;
 }
 
-function isValidCpf(input: string): boolean {
-  const digits = input.replace(/\D/g, "");
-  if (digits.length !== 11) return false;
-  if (/^(\d)\1{10}$/.test(digits)) return false;
-  const nums = digits.split("").map((d) => Number.parseInt(d, 10));
-  let sum = 0;
-  for (let i = 0; i < 9; i++) sum += nums[i] * (10 - i);
-  let d1 = 11 - (sum % 11);
-  if (d1 >= 10) d1 = 0;
-  if (d1 !== nums[9]) return false;
-  sum = 0;
-  for (let i = 0; i < 10; i++) sum += nums[i] * (11 - i);
-  let d2 = 11 - (sum % 11);
-  if (d2 >= 10) d2 = 0;
-  return d2 === nums[10];
-}
-
 function passesLuhn(input: string): boolean {
   const digits = input.replace(/\D/g, "");
   if (digits.length < 13 || digits.length > 19) return false;
@@ -115,14 +98,6 @@ export const RULES: ComplianceRule[] = [
     severity: "redact",
     pattern: /\b\d{3}-\d{2}-\d{4}\b/g,
     redactedAs: "[REDACTED:us-ssn]",
-  },
-  {
-    id: "cpf",
-    label: "Brazilian CPF",
-    severity: "redact",
-    pattern: /\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/g,
-    redactedAs: "[REDACTED:cpf]",
-    validate: isValidCpf,
   },
   {
     id: "credit-card",
