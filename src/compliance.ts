@@ -8,6 +8,7 @@ export interface ComplianceRule {
   severity: Severity;
   pattern: RegExp;
   redactedAs: string;
+  validate?: (match: string) => boolean;
 }
 
 export interface ComplianceViolation {
@@ -21,12 +22,46 @@ export interface ComplianceViolation {
   preview: string;
 }
 
+function isValidCpf(input: string): boolean {
+  const digits = input.replace(/\D/g, "");
+  if (digits.length !== 11) return false;
+  if (/^(\d)\1{10}$/.test(digits)) return false;
+  const nums = digits.split("").map((d) => Number.parseInt(d, 10));
+  let sum = 0;
+  for (let i = 0; i < 9; i++) sum += nums[i] * (10 - i);
+  let d1 = 11 - (sum % 11);
+  if (d1 >= 10) d1 = 0;
+  if (d1 !== nums[9]) return false;
+  sum = 0;
+  for (let i = 0; i < 10; i++) sum += nums[i] * (11 - i);
+  let d2 = 11 - (sum % 11);
+  if (d2 >= 10) d2 = 0;
+  return d2 === nums[10];
+}
+
+function passesLuhn(input: string): boolean {
+  const digits = input.replace(/\D/g, "");
+  if (digits.length < 13 || digits.length > 19) return false;
+  let sum = 0;
+  let alt = false;
+  for (let i = digits.length - 1; i >= 0; i--) {
+    let n = Number.parseInt(digits[i], 10);
+    if (alt) {
+      n *= 2;
+      if (n > 9) n -= 9;
+    }
+    sum += n;
+    alt = !alt;
+  }
+  return sum % 10 === 0;
+}
+
 export const RULES: ComplianceRule[] = [
   {
     id: "aws-access-key",
     label: "AWS access key ID",
     severity: "block",
-    pattern: /AKIA[0-9A-Z]{16}/g,
+    pattern: /\bAKIA[0-9A-Z]{16}\b/g,
     redactedAs: "[REDACTED:aws-access-key]",
   },
   {
@@ -41,21 +76,22 @@ export const RULES: ComplianceRule[] = [
     id: "openai-key",
     label: "OpenAI-style API key",
     severity: "block",
-    pattern: /\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b/g,
+    pattern: /(?<![A-Za-z0-9_-])sk-(?:proj-)?[A-Za-z0-9_-]{20,}(?![A-Za-z0-9_-])/g,
     redactedAs: "[REDACTED:openai-key]",
   },
   {
     id: "github-token",
     label: "GitHub token",
     severity: "block",
-    pattern: /\b(?:ghp_|github_pat_|gho_|ghu_|ghs_|ghr_)[A-Za-z0-9_]{20,}\b/g,
+    pattern:
+      /(?<![A-Za-z0-9_])(?:ghp_|github_pat_|gho_|ghu_|ghs_|ghr_)[A-Za-z0-9_]{20,}(?![A-Za-z0-9_])/g,
     redactedAs: "[REDACTED:github-token]",
   },
   {
     id: "slack-token",
     label: "Slack token",
     severity: "block",
-    pattern: /\bxox[abprs]-[A-Za-z0-9-]{10,}\b/g,
+    pattern: /(?<![A-Za-z0-9-])xox[abprs]-[A-Za-z0-9-]{10,}(?![A-Za-z0-9-])/g,
     redactedAs: "[REDACTED:slack-token]",
   },
   {
@@ -63,14 +99,14 @@ export const RULES: ComplianceRule[] = [
     label: "JSON Web Token",
     severity: "redact",
     pattern:
-      /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g,
+      /(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}(?![A-Za-z0-9_-])/g,
     redactedAs: "[REDACTED:jwt]",
   },
   {
     id: "email",
     label: "Email address",
     severity: "redact",
-    pattern: /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g,
+    pattern: /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,24}(?![A-Za-z])/g,
     redactedAs: "[REDACTED:email]",
   },
   {
@@ -86,6 +122,7 @@ export const RULES: ComplianceRule[] = [
     severity: "redact",
     pattern: /\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/g,
     redactedAs: "[REDACTED:cpf]",
+    validate: isValidCpf,
   },
   {
     id: "credit-card",
@@ -93,14 +130,16 @@ export const RULES: ComplianceRule[] = [
     severity: "redact",
     pattern: /\b(?:4\d{12}(?:\d{3})?|5[1-5]\d{14}|3[47]\d{13})\b/g,
     redactedAs: "[REDACTED:credit-card]",
+    validate: passesLuhn,
   },
 ];
 
+function freshPattern(rule: ComplianceRule): RegExp {
+  return new RegExp(rule.pattern.source, rule.pattern.flags);
+}
+
 function buildPreview(snippet: string, rule: ComplianceRule): string {
-  const redacted = snippet.replace(
-    new RegExp(rule.pattern.source, rule.pattern.flags),
-    rule.redactedAs
-  );
+  const redacted = snippet.replace(freshPattern(rule), rule.redactedAs);
   const trimmed = redacted.trim();
   if (trimmed.length <= 160) return trimmed;
   return `${trimmed.slice(0, 157)}...`;
@@ -121,8 +160,8 @@ export function scanFiles(files: Record<string, string>): ComplianceViolation[] 
     if (typeof contents !== "string" || contents.length === 0) continue;
 
     for (const rule of RULES) {
-      const pattern = new RegExp(rule.pattern.source, rule.pattern.flags);
-      for (const match of contents.matchAll(pattern)) {
+      for (const match of contents.matchAll(freshPattern(rule))) {
+        if (rule.validate && !rule.validate(match[0])) continue;
         const index = match.index ?? 0;
         const line = lineNumberAt(contents, index);
         const sliceStart = Math.max(0, index - 40);
@@ -156,29 +195,28 @@ export function redactString(
   const violations: ComplianceViolation[] = [];
 
   for (const rule of RULES) {
-    const pattern = new RegExp(rule.pattern.source, rule.pattern.flags);
-    const matches = redacted.match(pattern);
-    if (!matches || matches.length === 0) continue;
+    const matches = [...redacted.matchAll(freshPattern(rule))];
+    const kept = rule.validate
+      ? matches.filter((m) => rule.validate!(m[0]))
+      : matches;
+    if (kept.length === 0) continue;
 
-    for (const match of matches) {
-      const previewSource = match.length > 160 ? `${match.slice(0, 80)}...` : match;
+    for (const match of kept) {
+      const previewSource = match[0].length > 160 ? `${match[0].slice(0, 80)}...` : match[0];
       violations.push({
         ruleId: rule.id,
         ruleLabel: rule.label,
         severity: rule.severity,
         source,
         logIndex: context?.logIndex,
-        preview: previewSource.replace(
-          new RegExp(rule.pattern.source, rule.pattern.flags),
-          rule.redactedAs
-        ),
+        preview: previewSource.replace(freshPattern(rule), rule.redactedAs),
       });
     }
 
-    redacted = redacted.replace(
-      new RegExp(rule.pattern.source, rule.pattern.flags),
-      rule.redactedAs
-    );
+    redacted = redacted.replace(freshPattern(rule), (match) => {
+      if (rule.validate && !rule.validate(match)) return match;
+      return rule.redactedAs;
+    });
   }
 
   return { redacted, violations };

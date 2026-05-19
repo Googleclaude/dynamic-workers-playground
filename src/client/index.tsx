@@ -389,14 +389,6 @@ function getContentType(headers: Record<string, string>) {
   return match?.[1] ?? "text/plain";
 }
 
-function statusClassName(status: StatusTone) {
-  if (status === "success") return "success";
-  if (status === "error") return "error";
-  if (status === "blocked") return "blocked";
-  if (status === "running") return "loading";
-  return "idle";
-}
-
 function statusDotColor(tone: StatusTone) {
   if (tone === "success") return "#16a34a";
   if (tone === "error") return "#dc2626";
@@ -800,6 +792,7 @@ export function App() {
           tone: "success",
           label: `Success — ${redactedCount} redacted`,
         });
+        setComplianceOpen(true);
       } else {
         setStatus({ tone: "success", label: "Success" });
       }
