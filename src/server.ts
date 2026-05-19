@@ -124,12 +124,14 @@ async function executeWorker(
     timestamp: number;
   }>;
 
-  const headers: Record<string, string> = {};
-  workerResponse.headers.forEach((value, key) => {
-    headers[key] = value;
-  });
-
   const runtimeViolations: ComplianceViolation[] = [];
+
+  const redactedHeaders: Record<string, string> = {};
+  workerResponse.headers.forEach((value, key) => {
+    const { redacted, violations } = redactString(value, "response");
+    redactedHeaders[key] = redacted;
+    runtimeViolations.push(...violations);
+  });
 
   const { redacted: redactedBody, violations: bodyViolations } = redactString(
     responseBody,
@@ -145,6 +147,20 @@ async function executeWorker(
     return { ...log, message: redacted };
   });
 
+  let redactedWorkerError: { message: string; stack?: string } | null = null;
+  if (workerError) {
+    const { redacted: redactedMessage, violations: messageViolations } =
+      redactString(workerError.message, "response");
+    runtimeViolations.push(...messageViolations);
+    redactedWorkerError = { message: redactedMessage };
+    if (workerError.stack) {
+      const { redacted: redactedStack, violations: stackViolations } =
+        redactString(workerError.stack, "response");
+      runtimeViolations.push(...stackViolations);
+      redactedWorkerError.stack = redactedStack;
+    }
+  }
+
   return Response.json({
     bundleInfo: bundleInfo ?? {
       mainModule: "(cached)",
@@ -153,10 +169,10 @@ async function executeWorker(
     },
     response: {
       status: workerResponse.status,
-      headers,
+      headers: redactedHeaders,
       body: redactedBody,
     },
-    workerError,
+    workerError: redactedWorkerError,
     logs: redactedLogs,
     timing: {
       buildTime,
