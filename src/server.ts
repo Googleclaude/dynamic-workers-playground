@@ -35,6 +35,8 @@ interface RunRequestBody {
   files: Record<string, string>;
   version: number;
   pathname?: string;
+  method?: string;
+  body?: string;
   options?: {
     bundle?: boolean;
     minify?: boolean;
@@ -68,12 +70,18 @@ async function createWorkerId(
   return `dynamic-workers-playground-worker-${hash}`;
 }
 
+interface RequestOptions {
+  pathname: string;
+  method: string;
+  body: string;
+}
+
 async function executeWorker(
   worker: WorkerStub,
   state: WorkerState,
   workerId: string,
   sourceWarnings: ComplianceViolation[],
-  pathname = "/"
+  requestOptions: RequestOptions
 ): Promise<Response> {
   const entrypoint = worker.getEntrypoint() as Fetcher & {
     __warmup__?: () => Promise<void>;
@@ -92,8 +100,17 @@ async function executeWorker(
   const logWaiter = await logSessionStub.waitForLogs();
 
   const runStart = Date.now();
+  const { pathname, method, body } = requestOptions;
+  const methodAllowsBody = method !== "GET" && method !== "HEAD" && method !== "OPTIONS";
   const request = new Request(
-    `https://example.com${pathname.startsWith("/") ? pathname : `/${pathname}`}`
+    `https://example.com${pathname.startsWith("/") ? pathname : `/${pathname}`}`,
+    {
+      method,
+      headers: methodAllowsBody && body
+        ? { "content-type": "application/json" }
+        : undefined,
+      body: methodAllowsBody && body ? body : undefined,
+    }
   );
 
   let workerResponse: Response;
@@ -260,8 +277,13 @@ export default {
 
     if (url.pathname === "/api/run" && request.method === "POST") {
       try {
-        const { files, pathname, options } =
-          (await request.json()) as RunRequestBody;
+        const {
+          files,
+          pathname,
+          method,
+          body: requestBody,
+          options,
+        } = (await request.json()) as RunRequestBody;
 
         if (!files || Object.keys(files).length === 0) {
           return Response.json(
@@ -334,13 +356,25 @@ export default {
           };
         });
 
-        return executeWorker(
-          worker,
-          state,
-          workerId,
-          sourceWarnings,
-          pathname ?? "/"
-        );
+        const allowedMethods = new Set([
+          "GET",
+          "POST",
+          "PUT",
+          "PATCH",
+          "DELETE",
+          "OPTIONS",
+          "HEAD",
+        ]);
+        const normalizedMethod =
+          method && allowedMethods.has(method.toUpperCase())
+            ? method.toUpperCase()
+            : "GET";
+
+        return executeWorker(worker, state, workerId, sourceWarnings, {
+          pathname: pathname ?? "/",
+          method: normalizedMethod,
+          body: typeof requestBody === "string" ? requestBody : "",
+        });
       } catch (error) {
         return buildErrorResponse(error);
       }

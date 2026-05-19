@@ -613,6 +613,11 @@ export function App() {
   );
   const [bundle, setBundle] = useState(true);
   const [minify, setMinify] = useState(false);
+  const [reqMethod, setReqMethod] = useState<
+    "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS"
+  >("GET");
+  const [reqPath, setReqPath] = useState("/");
+  const [reqBody, setReqBody] = useState("");
   const [status, setStatus] = useState<{ tone: StatusTone; label: string }>({
     tone: "idle",
     label: "Ready",
@@ -820,6 +825,7 @@ export function App() {
         setLastSnapshot(nextSnapshot);
       }
 
+      const methodAllowsBody = reqMethod !== "GET" && reqMethod !== "OPTIONS";
       const response = await fetch("/api/run", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -827,6 +833,9 @@ export function App() {
           files,
           version: nextVersion,
           options: { bundle, minify },
+          pathname: reqPath || "/",
+          method: reqMethod,
+          body: methodAllowsBody ? reqBody : "",
         }),
       });
 
@@ -1247,6 +1256,92 @@ export function App() {
                 }}
               />
             </div>
+
+            {/* Request line */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "10px 16px",
+                borderTop: "1px solid var(--color-kumo-border, #e5e7eb)",
+                flexWrap: "wrap",
+              }}
+            >
+              <select
+                aria-label="HTTP method"
+                value={reqMethod}
+                onChange={(e) =>
+                  setReqMethod(e.target.value as typeof reqMethod)
+                }
+                style={{
+                  fontFamily: "monospace",
+                  fontSize: 12,
+                  padding: "4px 6px",
+                  borderRadius: 4,
+                  border: "1px solid var(--color-kumo-border, #e5e7eb)",
+                  background: "var(--color-kumo-surface)",
+                  color: "var(--text-color-kumo-default)",
+                  cursor: "pointer",
+                }}
+              >
+                {(
+                  ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"] as const
+                ).map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+              <Input
+                aria-label="Request path"
+                placeholder="/"
+                value={reqPath}
+                onChange={(e) => setReqPath(e.target.value)}
+                style={{
+                  flex: 1,
+                  minWidth: 120,
+                  fontFamily: "monospace",
+                  fontSize: 12,
+                }}
+              />
+            </div>
+
+            {reqMethod !== "GET" && reqMethod !== "OPTIONS" ? (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 4,
+                  padding: "0 16px 10px",
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.05em",
+                    color: "var(--text-color-kumo-subdued)",
+                  }}
+                >
+                  Request body
+                </span>
+                <Textarea
+                  aria-label="Request body"
+                  spellCheck={false}
+                  placeholder='{"name": "value"}'
+                  value={reqBody}
+                  onChange={(e) => setReqBody(e.target.value)}
+                  style={{
+                    fontFamily: "monospace",
+                    fontSize: 12,
+                    minHeight: 60,
+                    resize: "vertical",
+                  }}
+                />
+              </div>
+            ) : null}
 
             {/* Controls */}
             <div
