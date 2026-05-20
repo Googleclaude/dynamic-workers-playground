@@ -12,6 +12,9 @@
   "durable_objects": {
     "bindings": [{ "name": "LogSession", "class_name": "LogSession" }]
   },
+  "kv_namespaces": [
+    { "binding": "LGPD_KV", "id": "REPLACE_WITH_KV_NAMESPACE_ID" }
+  ],
   "migrations": [{ "tag": "v1", "new_classes": ["LogSession"] }],
   "observability": {
     "enabled": true
