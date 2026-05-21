@@ -34,22 +34,18 @@ interface ConsentAuditBody {
 	ts?: string;
 }
 
-const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
-const RATE_LIMIT_MAX = 5;
-const rateLimitBuckets = new Map<string, number[]>();
-
-function checkRateLimit(key: string): boolean {
-	const now = Date.now();
-	const bucket = (rateLimitBuckets.get(key) ?? []).filter(
-		(ts) => now - ts < RATE_LIMIT_WINDOW_MS,
-	);
-	if (bucket.length >= RATE_LIMIT_MAX) {
-		rateLimitBuckets.set(key, bucket);
-		return false;
-	}
-	bucket.push(now);
-	rateLimitBuckets.set(key, bucket);
-	return true;
+// Rate-limit via the LgpdRateLimit Durable Object (declared in wrangler.jsonc
+// and src/env.lgpd.d.ts). The DO survives isolate eviction and shares state
+// across edge nodes — better than an in-memory Map per isolate.
+async function checkRateLimit(
+	env: Env,
+	ipHash: string,
+	scope: "rights" | "audit",
+): Promise<boolean> {
+	const id = env.LgpdRateLimit.idFromName(ipHash);
+	const stub = env.LgpdRateLimit.get(id);
+	const { allowed } = await stub.check(scope);
+	return allowed;
 }
 
 // Reject browser POSTs from other origins. Non-browser clients (no Origin
@@ -87,7 +83,7 @@ export async function handleRightsRequest(
 	const ipHash = await hashShort(ip || "anon");
 	const uaHash = await hashShort(ua || "anon");
 
-	if (!checkRateLimit(ipHash)) {
+	if (!(await checkRateLimit(env, ipHash, "rights"))) {
 		console.log(
 			JSON.stringify({
 				event: "lgpd.rights-request.rate-limited",
@@ -199,7 +195,7 @@ export async function handleConsentAudit(
 	const ipHash = await hashShort(ip || "anon");
 	const uaHash = await hashShort(ua || "anon");
 
-	if (!checkRateLimit(`audit:${ipHash}`)) {
+	if (!(await checkRateLimit(env, ipHash, "audit"))) {
 		return Response.json({ error: "rate-limited" }, { status: 429 });
 	}
 
