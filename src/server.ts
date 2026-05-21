@@ -4,6 +4,7 @@ import { handleGitHubImport } from "./github";
 import { handleConsentAudit, handleRightsRequest } from "./lgpd";
 
 export { DynamicWorkerTail, LogSession } from "./logging";
+export { LgpdRateLimit } from "./lgpd-rate-limit";
 
 type LoaderExports = {
   LogSession: {

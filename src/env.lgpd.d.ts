@@ -1,8 +1,12 @@
-// Manual supplement until `npm run types` is re-run with the KV binding.
-// Once regenerated, env.d.ts will already include LGPD_KV and this file
-// becomes a redundant (but harmless) merger.
+// Manual supplement for LGPD-specific bindings until `npm run types` is
+// re-run. LGPD_KV is optional — when absent, rights-request and consent-audit
+// persistence are skipped (the handlers degrade gracefully). LgpdRateLimit
+// is required for the LGPD endpoints; it is declared in wrangler.jsonc.
 declare namespace Cloudflare {
 	interface Env {
-		LGPD_KV: KVNamespace;
+		LGPD_KV?: KVNamespace;
+		LgpdRateLimit: DurableObjectNamespace<
+			import("./lgpd-rate-limit").LgpdRateLimit
+		>;
 	}
 }

@@ -1,3 +1,11 @@
+// SECURITY: These endpoints accept unauthenticated submissions. They are
+// safe only when the deployment sits behind upstream auth (e.g. Cloudflare
+// Access, as recommended in README.md). Without it, anyone can submit a
+// rights request for any CPF or flood the audit log. The KV binding is
+// optional — without it, requests still validate and rate-limit but are
+// not persisted; the handler returns 503 so the client can surface the
+// misconfiguration instead of silently dropping the submission.
+
 import { hashShort, sha256Hex } from "./hashing";
 
 const RIGHTS_REQUEST_TYPES = new Set([
@@ -35,22 +43,15 @@ interface ConsentAuditBody {
 	ts?: string;
 }
 
-const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
-const RATE_LIMIT_MAX = 5;
-const rateLimitBuckets = new Map<string, number[]>();
-
-function checkRateLimit(key: string): boolean {
-	const now = Date.now();
-	const bucket = (rateLimitBuckets.get(key) ?? []).filter(
-		(ts) => now - ts < RATE_LIMIT_WINDOW_MS,
+async function checkRateLimit(env: Env, bucketKey: string): Promise<boolean> {
+	// Single named DO instance — all rate-limit buckets share storage but are
+	// keyed independently. Strongly consistent across colos (unlike a
+	// per-isolate Map or KV-with-TTL).
+	const stub = env.LgpdRateLimit.get(
+		env.LgpdRateLimit.idFromName("global"),
 	);
-	if (bucket.length >= RATE_LIMIT_MAX) {
-		rateLimitBuckets.set(key, bucket);
-		return false;
-	}
-	bucket.push(now);
-	rateLimitBuckets.set(key, bucket);
-	return true;
+	const result = await stub.check(bucketKey);
+	return result.allowed;
 }
 
 function makeProtocol(): string {
@@ -71,7 +72,7 @@ export async function handleRightsRequest(
 	const ipHash = await hashShort(ip || "anon");
 	const uaHash = await hashShort(ua || "anon");
 
-	if (!checkRateLimit(ipHash)) {
+	if (!(await checkRateLimit(env, `rights:${ipHash}`))) {
 		console.log(
 			JSON.stringify({
 				event: "lgpd.rights-request.rate-limited",
@@ -136,7 +137,7 @@ export async function handleRightsRequest(
 		ua_hash: uaHash,
 	};
 
-	const kv = env.LGPD_KV as KVNamespace | undefined;
+	const kv = env.LGPD_KV;
 	if (!kv) {
 		console.log(
 			JSON.stringify({
@@ -180,7 +181,7 @@ export async function handleConsentAudit(
 	const ipHash = await hashShort(ip || "anon");
 	const uaHash = await hashShort(ua || "anon");
 
-	if (!checkRateLimit(`audit:${ipHash}`)) {
+	if (!(await checkRateLimit(env, `audit:${ipHash}`))) {
 		return Response.json({ error: "rate-limited" }, { status: 429 });
 	}
 
@@ -215,7 +216,7 @@ export async function handleConsentAudit(
 		ua_hash: uaHash,
 	};
 
-	const kv = env.LGPD_KV as KVNamespace | undefined;
+	const kv = env.LGPD_KV;
 	if (kv) {
 		await kv.put(
 			`consent-audit:${body.id}`,
