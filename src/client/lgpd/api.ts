@@ -38,7 +38,6 @@ export async function submitRightsRequest(
 		nameHash: await sha256Hex(payload.name.trim().toLowerCase()),
 		emailHash: await sha256Hex(payload.email.trim().toLowerCase()),
 		cpfHash: cpfDigits ? await sha256Hex(cpfDigits) : undefined,
-		cpfLast2: cpfDigits ? cpfDigits.slice(-2) : undefined,
 		details: payload.details,
 		locale: payload.locale,
 		confirmedSubject: payload.confirmedSubject,

@@ -48,7 +48,7 @@ void i18n
 			order: ["customFunctionalStorage", "navigator", "htmlTag"],
 			caches: ["customFunctionalStorage"],
 		},
-		interpolation: { escapeValue: false },
+		interpolation: { escapeValue: true },
 		returnObjects: false,
 	});
 
