@@ -13,6 +13,8 @@ const RIGHTS_REQUEST_TYPES = new Set([
 ]);
 
 const HEX64_RE = /^[0-9a-f]{64}$/;
+const UUID_RE =
+	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 interface RightsRequestBody {
 	requestType?: string;
@@ -178,6 +180,10 @@ export async function handleConsentAudit(
 	const ipHash = await hashShort(ip || "anon");
 	const uaHash = await hashShort(ua || "anon");
 
+	if (!checkRateLimit(`audit:${ipHash}`)) {
+		return Response.json({ error: "rate-limited" }, { status: 429 });
+	}
+
 	let body: ConsentAuditBody;
 	try {
 		body = (await request.json()) as ConsentAuditBody;
@@ -185,7 +191,17 @@ export async function handleConsentAudit(
 		return Response.json({ error: "invalid-json" }, { status: 400 });
 	}
 
-	if (!body.id || !body.version || !body.categories || !body.method) {
+	if (
+		!body.id ||
+		!UUID_RE.test(body.id) ||
+		!body.version ||
+		typeof body.version !== "string" ||
+		body.version.length > 32 ||
+		!body.categories ||
+		typeof body.categories !== "object" ||
+		!body.method ||
+		!["accept-all", "reject-all", "custom"].includes(body.method)
+	) {
 		return Response.json({ error: "invalid-payload" }, { status: 400 });
 	}
 

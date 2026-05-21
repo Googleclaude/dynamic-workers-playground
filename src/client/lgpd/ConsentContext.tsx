@@ -7,6 +7,7 @@ import {
 	useState,
 } from "react";
 import type { ReactNode } from "react";
+import i18n from "../i18n";
 import { CONSENT_VERSION } from "./constants";
 import {
 	CONSENT_CHANGED_EVENT,
@@ -44,25 +45,18 @@ const ConsentContext = createContext<ConsentContextValue>(defaultValue);
 function buildRecord(
 	categories: Record<ConsentCategory, boolean>,
 	method: ConsentRecord["method"],
-	locale: string,
 ): ConsentRecord {
 	return {
 		version: CONSENT_VERSION,
 		timestamp: new Date().toISOString(),
-		locale,
+		locale: i18n.language || i18n.resolvedLanguage || "en",
 		categories: { ...categories, necessary: true },
 		method,
 		id: newConsentId(),
 	};
 }
 
-export function ConsentProvider({
-	children,
-	currentLocale = "en",
-}: {
-	children: ReactNode;
-	currentLocale?: string;
-}) {
+export function ConsentProvider({ children }: { children: ReactNode }) {
 	const [record, setRecord] = useState<ConsentRecord | null>(null);
 	const [ready, setReady] = useState(false);
 
@@ -96,21 +90,19 @@ export function ConsentProvider({
 		const next = buildRecord(
 			{ necessary: true, functional: true, preferences: true },
 			"accept-all",
-			currentLocale,
 		);
 		saveConsent(next);
 		setRecord(next);
-	}, [currentLocale]);
+	}, []);
 
 	const rejectAll = useCallback(() => {
 		const next = buildRecord(
 			{ necessary: true, functional: false, preferences: false },
 			"reject-all",
-			currentLocale,
 		);
 		saveConsent(next);
 		setRecord(next);
-	}, [currentLocale]);
+	}, []);
 
 	const update = useCallback(
 		(categories: Partial<Record<ConsentCategory, boolean>>) => {
@@ -126,12 +118,11 @@ export function ConsentProvider({
 					preferences: categories.preferences ?? base.preferences,
 				},
 				"custom",
-				currentLocale,
 			);
 			saveConsent(next);
 			setRecord(next);
 		},
-		[record, currentLocale],
+		[record],
 	);
 
 	const revoke = useCallback(() => {

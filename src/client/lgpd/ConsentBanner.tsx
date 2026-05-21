@@ -24,12 +24,11 @@ export default function ConsentBanner() {
 					{t("title")}
 				</h2>
 				<p className="lgpd-banner-description">
-					<Trans i18nKey="description" ns="banner">
-						This playground stores your theme and language preferences in your
-						browser only when you allow it. The source code and GitHub URLs you
-						submit are processed in memory to execute your Worker. Learn more
-						in our <Link to="/privacy">Privacy Policy</Link>.
-					</Trans>
+					<Trans
+						i18nKey="description"
+						ns="banner"
+						components={{ 1: <Link to="/privacy" /> }}
+					/>
 				</p>
 
 				{customizing && (
