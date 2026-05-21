@@ -1,0 +1,44 @@
+{
+	"title": "Data Subject Rights Request",
+	"intro": "Use this form to exercise any of the rights granted to you by LGPD Article 18. We will respond within 15 days. Personal identifiers (name, email, CPF) are hashed before storage; we cannot recover them in plain text.",
+	"types": {
+		"label": "Type of request",
+		"confirmation": "Confirmation that we process your data",
+		"access": "Access to your data",
+		"correction": "Correction of incomplete, inaccurate or outdated data",
+		"anonymization-blocking-deletion": "Anonymization, blocking or deletion",
+		"portability": "Portability to another provider",
+		"sharing-info": "Information about data sharing",
+		"refusal-consequences": "Information about consequences of refusing consent",
+		"consent-revocation": "Revocation of consent",
+		"opposition": "Opposition to processing"
+	},
+	"fields": {
+		"name": "Full name",
+		"namePlaceholder": "As registered with us",
+		"email": "Contact email",
+		"emailPlaceholder": "name@example.com",
+		"cpf": "CPF (optional)",
+		"cpfPlaceholder": "000.000.000-00",
+		"cpfHelp": "Optional. We store only a SHA-256 hash and the last two digits.",
+		"details": "Details of your request",
+		"detailsPlaceholder": "Describe the data or processing activity you are referring to (max 2000 characters).",
+		"confirmSubject": "I confirm I am the data subject or am authorized to act on their behalf.",
+		"submit": "Submit request",
+		"submitting": "Submitting…"
+	},
+	"errors": {
+		"required": "Please complete all required fields.",
+		"emailFormat": "Please provide a valid email address.",
+		"detailsTooLong": "Details must be at most 2000 characters.",
+		"confirmRequired": "You must confirm you are the data subject.",
+		"submitFailed": "We could not record your request. Please try again later or email the DPO directly."
+	},
+	"success": {
+		"title": "Request received",
+		"description": "Your request was recorded. Please save the protocol number below — you will need it to follow up.",
+		"protocolLabel": "Protocol number",
+		"sla": "We will respond within 15 days. Replies are sent to the email you provided.",
+		"newRequest": "Submit another request"
+	}
+}

@@ -7,13 +7,16 @@
     "start": "vite dev",
     "build": "vite build && wrangler deploy",
     "deploy": "vite build && wrangler deploy",
-    "test": "vitest run",
     "types": "wrangler types env.d.ts --include-runtime false"
   },
   "dependencies": {
     "@cloudflare/kumo": "^1.15.0",
     "@cloudflare/worker-bundler": "^0.0.4",
-    "@phosphor-icons/react": "^2.1.10"
+    "@phosphor-icons/react": "^2.1.10",
+    "i18next": "^23.16.0",
+    "i18next-browser-languagedetector": "^8.0.0",
+    "react-i18next": "^15.4.0",
+    "react-router-dom": "^7.1.0"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.30.0",
@@ -27,7 +30,6 @@
     "tailwindcss": "^4.2.2",
     "typescript": "^5.8.2",
     "vite": "^8.0.1",
-    "vitest": "^3.0.0",
     "wrangler": "^4.76.0"
   }
 }

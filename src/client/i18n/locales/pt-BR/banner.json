@@ -1,0 +1,23 @@
+{
+	"title": "Respeitamos sua privacidade",
+	"description": "Este playground armazena suas preferências de tema e idioma no navegador apenas quando você permite. O código-fonte e URLs do GitHub que você envia são processados em memória para executar seu Worker. Saiba mais em nossa <1>Política de Privacidade</1>.",
+	"acceptAll": "Aceitar tudo",
+	"rejectAll": "Rejeitar não essenciais",
+	"customize": "Personalizar",
+	"savePreferences": "Salvar preferências",
+	"categories": {
+		"necessary": {
+			"label": "Estritamente necessário",
+			"description": "Necessário para o funcionamento do playground. Inclui o próprio registro de consentimento.",
+			"alwaysOn": "Sempre ativo"
+		},
+		"functional": {
+			"label": "Funcional",
+			"description": "Lembra suas preferências de tema (claro/escuro) e idioma entre visitas."
+		},
+		"preferences": {
+			"label": "Preferências",
+			"description": "Reservado para futuras preferências de interface. Atualmente não utilizado."
+		}
+	}
+}

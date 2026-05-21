@@ -6,8 +6,26 @@
     <link rel="icon" href="/favicon.ico" />
     <title>Dynamic Workers Playground</title>
     <script>
+      // Pre-hydration theme bootstrap. Only reads the persisted theme when a
+      // valid LGPD consent record grants the "functional" category. The
+      // version literal ("1.0.0") is mirrored from CONSENT_VERSION in
+      // src/client/lgpd/constants.ts and must be bumped in both places.
       (() => {
-        const mode = localStorage.getItem("theme") || "light";
+        let mode = "light";
+        try {
+          const raw = localStorage.getItem("lgpd-consent");
+          if (raw) {
+            const rec = JSON.parse(raw);
+            if (
+              rec &&
+              rec.version === "1.0.0" &&
+              rec.categories &&
+              rec.categories.functional === true
+            ) {
+              mode = localStorage.getItem("theme") || "light";
+            }
+          }
+        } catch {}
         document.documentElement.setAttribute("data-mode", mode);
         document.documentElement.style.colorScheme = mode;
       })();

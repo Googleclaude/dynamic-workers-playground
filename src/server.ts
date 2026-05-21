@@ -1,14 +1,10 @@
 import { exports } from "cloudflare:workers";
 import { createWorker } from "@cloudflare/worker-bundler";
 import { handleGitHubImport } from "./github";
-import {
-  redactString,
-  scanFiles,
-  type ComplianceViolation,
-} from "./compliance";
-import { methodAllowsBody, normalizeMethod } from "./request-options";
+import { handleConsentAudit, handleRightsRequest } from "./lgpd";
 
 export { DynamicWorkerTail, LogSession } from "./logging";
+export { LgpdRateLimit } from "./lgpd-rate-limit";
 
 type LoaderExports = {
   LogSession: {
@@ -36,8 +32,6 @@ interface RunRequestBody {
   files: Record<string, string>;
   version: number;
   pathname?: string;
-  method?: string;
-  body?: string;
   options?: {
     bundle?: boolean;
     minify?: boolean;
@@ -71,18 +65,11 @@ async function createWorkerId(
   return `dynamic-workers-playground-worker-${hash}`;
 }
 
-interface RequestOptions {
-  pathname: string;
-  method: string;
-  body: string;
-}
-
 async function executeWorker(
   worker: WorkerStub,
   state: WorkerState,
   workerId: string,
-  sourceWarnings: ComplianceViolation[],
-  requestOptions: RequestOptions
+  pathname = "/"
 ): Promise<Response> {
   const entrypoint = worker.getEntrypoint() as Fetcher & {
     __warmup__?: () => Promise<void>;
@@ -101,15 +88,8 @@ async function executeWorker(
   const logWaiter = await logSessionStub.waitForLogs();
 
   const runStart = Date.now();
-  const { pathname, method, body } = requestOptions;
-  const hasBody = methodAllowsBody(method) && body.length > 0;
   const request = new Request(
-    `https://example.com${pathname.startsWith("/") ? pathname : `/${pathname}`}`,
-    {
-      method,
-      headers: hasBody ? { "content-type": "application/json" } : undefined,
-      body: hasBody ? body : undefined,
-    }
+    `https://example.com${pathname.startsWith("/") ? pathname : `/${pathname}`}`
   );
 
   let workerResponse: Response;
@@ -134,97 +114,41 @@ async function executeWorker(
   }
 
   const runTime = Date.now() - runStart;
-  const rawLogs = (await logWaiter.getLogs(1000)) as Array<{
-    level: string;
-    message: string;
-    timestamp: number;
-  }>;
+  const logs = await logWaiter.getLogs(1000);
 
-  const runtimeViolations: ComplianceViolation[] = [];
-
-  const redactedHeaders: Record<string, string> = {};
+  const headers: Record<string, string> = {};
   workerResponse.headers.forEach((value, key) => {
-    const { redacted, violations } = redactString(value, "response");
-    redactedHeaders[key] = redacted;
-    runtimeViolations.push(...violations);
+    headers[key] = value;
   });
-
-  const { redacted: redactedBody, violations: bodyViolations } = redactString(
-    responseBody,
-    "response"
-  );
-  runtimeViolations.push(...bodyViolations);
-
-  const redactedLogs = rawLogs.map((log, index) => {
-    const { redacted, violations } = redactString(log.message, "log", {
-      logIndex: index,
-    });
-    runtimeViolations.push(...violations);
-    return { ...log, message: redacted };
-  });
-
-  let redactedWorkerError: { message: string; stack?: string } | null = null;
-  if (workerError) {
-    const { redacted: redactedMessage, violations: messageViolations } =
-      redactString(workerError.message, "response");
-    runtimeViolations.push(...messageViolations);
-    redactedWorkerError = { message: redactedMessage };
-    if (workerError.stack) {
-      const { redacted: redactedStack, violations: stackViolations } =
-        redactString(workerError.stack, "response");
-      runtimeViolations.push(...stackViolations);
-      redactedWorkerError.stack = redactedStack;
-    }
-  }
-
-  const safeBundleInfo = bundleInfo
-    ? {
-        mainModule: redactInPlace(bundleInfo.mainModule),
-        modules: bundleInfo.modules.map(redactInPlace),
-        warnings: bundleInfo.warnings.map(redactInPlace),
-      }
-    : { mainModule: "(cached)", modules: [], warnings: [] };
 
   return Response.json({
-    bundleInfo: safeBundleInfo,
+    bundleInfo: bundleInfo ?? {
+      mainModule: "(cached)",
+      modules: [],
+      warnings: [],
+    },
     response: {
       status: workerResponse.status,
-      headers: redactedHeaders,
-      body: redactedBody,
+      headers,
+      body: responseBody,
     },
-    workerError: redactedWorkerError,
-    logs: redactedLogs,
+    workerError,
+    logs,
     timing: {
       buildTime,
       loadTime,
       runTime,
       totalTime: buildTime + loadTime + runTime,
     },
-    compliance: {
-      blocked: false,
-      violations: [...sourceWarnings, ...runtimeViolations].map(
-        redactViolationFile
-      ),
-    },
   });
-}
-
-function redactInPlace(value: string): string {
-  return redactString(value, "response").redacted;
-}
-
-function redactViolationFile(v: ComplianceViolation): ComplianceViolation {
-  return v.file ? { ...v, file: redactInPlace(v.file) } : v;
 }
 
 function buildErrorResponse(error: unknown): Response {
   console.error("Error in dynamic-workers-playground:", error);
-  const rawMessage = error instanceof Error ? error.message : "Unknown error";
-  const rawStack = error instanceof Error ? error.stack : undefined;
   return Response.json(
     {
-      error: redactInPlace(rawMessage),
-      stack: rawStack ? redactInPlace(rawStack) : undefined,
+      error: error instanceof Error ? error.message : "Unknown error",
+      stack: error instanceof Error ? error.stack : undefined,
     },
     { status: 500 }
   );
@@ -274,15 +198,24 @@ export default {
       return handleGitHubImport(request);
     }
 
+    if (
+      url.pathname === "/api/lgpd/rights-request" &&
+      request.method === "POST"
+    ) {
+      return handleRightsRequest(request, env);
+    }
+
+    if (
+      url.pathname === "/api/lgpd/consent-audit" &&
+      request.method === "POST"
+    ) {
+      return handleConsentAudit(request, env);
+    }
+
     if (url.pathname === "/api/run" && request.method === "POST") {
       try {
-        const {
-          files,
-          pathname,
-          method,
-          body: requestBody,
-          options,
-        } = (await request.json()) as RunRequestBody;
+        const { files, pathname, options } =
+          (await request.json()) as RunRequestBody;
 
         if (!files || Object.keys(files).length === 0) {
           return Response.json(
@@ -292,26 +225,6 @@ export default {
         }
 
         const normalizedFiles = normalizeFiles(files);
-
-        const allViolations = scanFiles(normalizedFiles);
-        const blocking = allViolations.filter((v) => v.severity === "block");
-        if (blocking.length > 0) {
-          return Response.json(
-            {
-              error:
-                "Compliance check failed: secrets detected in source files.",
-              compliance: {
-                blocked: true,
-                violations: blocking.map(redactViolationFile),
-              },
-            },
-            { status: 400 }
-          );
-        }
-        const sourceWarnings = allViolations.filter(
-          (v) => v.severity === "redact"
-        );
-
         const workerId = await createWorkerId(normalizedFiles, options);
         const state: WorkerState = {
           bundleInfo: null,
@@ -355,11 +268,7 @@ export default {
           };
         });
 
-        return executeWorker(worker, state, workerId, sourceWarnings, {
-          pathname: pathname ?? "/",
-          method: normalizeMethod(method),
-          body: typeof requestBody === "string" ? requestBody : "",
-        });
+        return executeWorker(worker, state, workerId, pathname ?? "/");
       } catch (error) {
         return buildErrorResponse(error);
       }

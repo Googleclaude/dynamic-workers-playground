@@ -6,7 +6,6 @@ import {
   Surface,
   Textarea,
 } from "@cloudflare/kumo";
-import { decodeShareHash, encodeShareHash } from "../share";
 import {
   CaretDown,
   FileText,
@@ -16,15 +15,16 @@ import {
   Moon,
   Play,
   Plus,
-  Share,
-  ShieldCheck,
-  ShieldWarning,
   Sun,
   X,
 } from "@phosphor-icons/react";
 import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { useEffect, useMemo, useState } from "react";
+import { useConsent } from "./lgpd/ConsentContext";
+import Root from "./Root";
+import "./i18n";
+import "./lgpd.css";
 
 interface ModalProps {
   open: boolean;
@@ -122,22 +122,6 @@ function Modal({ open, onClose, title, size = "sm", children }: ModalProps) {
 
 type PlaygroundFiles = Record<string, string>;
 
-interface ComplianceViolation {
-  ruleId: string;
-  ruleLabel: string;
-  severity: "block" | "redact";
-  source: "file" | "response" | "log";
-  file?: string;
-  line?: number;
-  logIndex?: number;
-  preview: string;
-}
-
-interface ComplianceReport {
-  blocked: boolean;
-  violations: ComplianceViolation[];
-}
-
 interface RunResult {
   bundleInfo: {
     mainModule: string;
@@ -164,7 +148,6 @@ interface RunResult {
     runTime: number;
     totalTime: number;
   };
-  compliance?: ComplianceReport;
 }
 
 interface GitHubImportResult {
@@ -172,7 +155,7 @@ interface GitHubImportResult {
   files?: PlaygroundFiles;
 }
 
-type StatusTone = "idle" | "running" | "success" | "error" | "blocked";
+type StatusTone = "idle" | "running" | "success" | "error";
 
 const EXAMPLES: Array<{
   id: string;
@@ -391,12 +374,11 @@ function getContentType(headers: Record<string, string>) {
   return match?.[1] ?? "text/plain";
 }
 
-function statusDotColor(tone: StatusTone) {
-  if (tone === "success") return "#16a34a";
-  if (tone === "error") return "#dc2626";
-  if (tone === "blocked") return "#7c3aed";
-  if (tone === "running") return "#f59e0b";
-  return "#9ca3af";
+function statusClassName(status: StatusTone) {
+  if (status === "success") return "success";
+  if (status === "error") return "error";
+  if (status === "running") return "loading";
+  return "idle";
 }
 
 function consolePrefix(level: string) {
@@ -406,104 +388,38 @@ function consolePrefix(level: string) {
 }
 
 function useDarkMode() {
+  const consent = useConsent();
   const [dark, setDark] = useState(() => {
     if (typeof window === "undefined") return false;
-    return (
-      localStorage.getItem("theme") === "dark" ||
-      (!localStorage.getItem("theme") &&
-        window.matchMedia("(prefers-color-scheme: dark)").matches)
-    );
+    const stored = consent.has("functional")
+      ? localStorage.getItem("theme")
+      : null;
+    if (stored) return stored === "dark";
+    return window.matchMedia("(prefers-color-scheme: dark)").matches;
   });
 
-  function toggle() {
-    const next = !dark;
-    setDark(next);
-    const mode = next ? "dark" : "light";
+  useEffect(() => {
+    const mode = dark ? "dark" : "light";
     document.documentElement.setAttribute("data-mode", mode);
     document.documentElement.style.colorScheme = mode;
-    localStorage.setItem("theme", mode);
+    if (consent.has("functional")) {
+      localStorage.setItem("theme", mode);
+    }
+  }, [dark, consent]);
+
+  // When functional consent is revoked, purge stored theme so the
+  // next visit boots in default light mode.
+  useEffect(() => {
+    if (!consent.has("functional")) {
+      localStorage.removeItem("theme");
+    }
+  }, [consent]);
+
+  function toggle() {
+    setDark((d) => !d);
   }
 
   return { dark, toggle };
-}
-
-interface StatusIndicatorProps {
-  status: { tone: StatusTone; label: string };
-  report: ComplianceReport | null;
-  onOpenReport: () => void;
-}
-
-function StatusIndicator({ status, report, onOpenReport }: StatusIndicatorProps) {
-  const hasReport = report !== null && report.violations.length > 0;
-
-  const inner = (
-    <>
-      <span
-        style={{
-          width: 8,
-          height: 8,
-          borderRadius: "50%",
-          display: "inline-block",
-          backgroundColor: statusDotColor(status.tone),
-        }}
-      />
-      <span
-        style={{
-          fontSize: 13,
-          color: "var(--text-color-kumo-subdued)",
-        }}
-      >
-        {status.label}
-      </span>
-      {report !== null && report.violations.length > 0 ? (
-        report.blocked ? (
-          <ShieldWarning
-            size={14}
-            weight="fill"
-            style={{ color: "#7c3aed" }}
-          />
-        ) : (
-          <ShieldCheck
-            size={14}
-            style={{ color: "var(--text-color-kumo-subdued)" }}
-          />
-        )
-      ) : null}
-    </>
-  );
-
-  if (!hasReport) {
-    return (
-      <div
-        aria-live="polite"
-        style={{ display: "flex", alignItems: "center", gap: 8 }}
-      >
-        {inner}
-      </div>
-    );
-  }
-
-  return (
-    <button
-      type="button"
-      aria-live="polite"
-      onClick={onOpenReport}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        background: "none",
-        border: "none",
-        padding: "4px 6px",
-        margin: 0,
-        borderRadius: 6,
-        cursor: "pointer",
-        color: "inherit",
-      }}
-    >
-      {inner}
-    </button>
-  );
 }
 
 function LayersLogo() {
@@ -519,66 +435,6 @@ function LayersLogo() {
       <path d="M29.175 6.503h-3.758l13.598 18.082-13.598 17.918h3.765l12.908-17.01v-1.808z" />
     </svg>
   );
-}
-
-const STORAGE_KEY = "dynamic-workers-playground:state:v1";
-
-interface PersistedState {
-  files: PlaygroundFiles;
-  currentFile: string;
-}
-
-function loadPersistedState(): PersistedState | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as unknown;
-    if (
-      !parsed ||
-      typeof parsed !== "object" ||
-      Array.isArray(parsed) ||
-      !("files" in parsed) ||
-      !("currentFile" in parsed)
-    ) {
-      return null;
-    }
-    const candidate = parsed as { files: unknown; currentFile: unknown };
-    if (
-      !candidate.files ||
-      typeof candidate.files !== "object" ||
-      Array.isArray(candidate.files)
-    ) {
-      return null;
-    }
-    const files: PlaygroundFiles = {};
-    for (const [k, v] of Object.entries(candidate.files)) {
-      if (typeof k !== "string" || typeof v !== "string") return null;
-      files[k] = v;
-    }
-    if (typeof candidate.currentFile !== "string") return null;
-    return { files, currentFile: candidate.currentFile };
-  } catch {
-    return null;
-  }
-}
-
-function savePersistedState(state: PersistedState) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch {
-    // localStorage may be full or disabled — fail silently.
-  }
-}
-
-function clearPersistedState() {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.removeItem(STORAGE_KEY);
-  } catch {
-    // ignore
-  }
 }
 
 function PoweredByWorkers() {
@@ -615,26 +471,17 @@ function PoweredByWorkers() {
   );
 }
 
-export function App() {
+export function Playground() {
   const { dark, toggle: toggleDark } = useDarkMode();
   const initialExample = EXAMPLES[0];
-  const persisted =
-    typeof window !== "undefined" && !window.location.hash
-      ? loadPersistedState()
-      : null;
-  const [files, setFiles] = useState<PlaygroundFiles>(
-    persisted?.files ?? { ...initialExample.files }
-  );
+  const [files, setFiles] = useState<PlaygroundFiles>({
+    ...initialExample.files,
+  });
   const [currentFile, setCurrentFile] = useState(
-    persisted?.currentFile ?? inferPrimaryFile(initialExample.files)
+    inferPrimaryFile(initialExample.files)
   );
   const [bundle, setBundle] = useState(true);
   const [minify, setMinify] = useState(false);
-  const [reqMethod, setReqMethod] = useState<
-    "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS"
-  >("GET");
-  const [reqPath, setReqPath] = useState("/");
-  const [reqBody, setReqBody] = useState("");
   const [status, setStatus] = useState<{ tone: StatusTone; label: string }>({
     tone: "idle",
     label: "Ready",
@@ -650,63 +497,8 @@ export function App() {
   const [importing, setImporting] = useState(false);
   const [addFileOpen, setAddFileOpen] = useState(false);
   const [githubOpen, setGithubOpen] = useState(false);
-  const [complianceOpen, setComplianceOpen] = useState(false);
-  const [complianceReport, setComplianceReport] =
-    useState<ComplianceReport | null>(null);
   const [addFileName, setAddFileName] = useState("");
   const [githubUrl, setGitHubUrl] = useState("");
-  const [shareCopied, setShareCopied] = useState(false);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!window.location.hash) return;
-    void decodeShareHash(window.location.hash).then((shared) => {
-      if (shared && Object.keys(shared).length > 0) {
-        applyFiles(shared);
-      }
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (currentFile) {
-      savePersistedState({ files, currentFile });
-    }
-  }, [files, currentFile]);
-
-  function resetToExample() {
-    if (
-      !window.confirm(
-        "Reset playground to the default example? Your current files will be cleared."
-      )
-    ) {
-      return;
-    }
-    clearPersistedState();
-    if (window.location.hash) {
-      window.history.replaceState(
-        null,
-        "",
-        `${window.location.pathname}${window.location.search}`
-      );
-    }
-    applyFiles({ ...EXAMPLES[0].files });
-  }
-
-  async function copyShareLink() {
-    try {
-      const hash = await encodeShareHash(files);
-      const url = `${window.location.origin}${window.location.pathname}${hash}`;
-      window.history.replaceState(null, "", url);
-      await navigator.clipboard.writeText(url);
-      setShareCopied(true);
-      window.setTimeout(() => setShareCopied(false), 1500);
-    } catch (err) {
-      window.alert(
-        `Couldn't create share link: ${err instanceof Error ? err.message : String(err)}`
-      );
-    }
-  }
 
   const orderedFiles = useMemo(() => Object.keys(files), [files]);
   const currentValue = currentFile ? (files[currentFile] ?? "") : "";
@@ -716,7 +508,6 @@ export function App() {
     setCurrentFile(inferPrimaryFile(nextFiles));
     setResult(null);
     setError(null);
-    setComplianceReport(null);
     setStatus({ tone: "idle", label: "Ready" });
   }
 
@@ -854,7 +645,6 @@ export function App() {
   async function runWorker() {
     setRunning(true);
     setError(null);
-    setComplianceReport(null);
     setStatus({ tone: "running", label: "Bundling..." });
 
     try {
@@ -867,7 +657,6 @@ export function App() {
         setLastSnapshot(nextSnapshot);
       }
 
-      const methodAllowsBody = reqMethod !== "GET" && reqMethod !== "OPTIONS";
       const response = await fetch("/api/run", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -875,9 +664,6 @@ export function App() {
           files,
           version: nextVersion,
           options: { bundle, minify },
-          pathname: reqPath || "/",
-          method: reqMethod,
-          body: methodAllowsBody ? reqBody : "",
         }),
       });
 
@@ -885,41 +671,15 @@ export function App() {
       const payload = rawPayload as RunResult & {
         error?: string;
         stack?: string;
-        compliance?: ComplianceReport;
       };
-
       if (!response.ok || payload.error) {
-        if (payload.compliance?.blocked) {
-          setResult(null);
-          setComplianceReport(payload.compliance);
-          setError({
-            message:
-              payload.error || "Compliance check blocked this run.",
-            stack: payload.stack,
-          });
-          setStatus({
-            tone: "blocked",
-            label: `Blocked — ${payload.compliance.violations.length} issue${payload.compliance.violations.length === 1 ? "" : "s"}`,
-          });
-          setComplianceOpen(true);
-          return;
-        }
         throw new Error(payload.error || "Failed to run worker.");
       }
 
       setResult(payload);
-      const report = payload.compliance ?? null;
-      setComplianceReport(report);
 
-      const redactedCount = report?.violations.length ?? 0;
       if (payload.workerError) {
         setStatus({ tone: "error", label: "Runtime Error" });
-      } else if (redactedCount > 0) {
-        setStatus({
-          tone: "success",
-          label: `Success — ${redactedCount} redacted`,
-        });
-        setComplianceOpen(true);
       } else {
         setStatus({ tone: "success", label: "Success" });
       }
@@ -1048,12 +808,35 @@ export function App() {
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <StatusIndicator
-              status={status}
-              report={complianceReport}
-              onOpenReport={() => setComplianceOpen(true)}
-            />
-
+            <div
+              aria-live="polite"
+              style={{ display: "flex", alignItems: "center", gap: 8 }}
+            >
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  display: "inline-block",
+                  backgroundColor:
+                    status.tone === "success"
+                      ? "#16a34a"
+                      : status.tone === "error"
+                        ? "#dc2626"
+                        : status.tone === "running"
+                          ? "#f59e0b"
+                          : "#9ca3af",
+                }}
+              />
+              <span
+                style={{
+                  fontSize: 13,
+                  color: "var(--text-color-kumo-subdued)",
+                }}
+              >
+                {status.label}
+              </span>
+            </div>
 
             <button
               type="button"
@@ -1146,9 +929,6 @@ export function App() {
                         {example.label}
                       </DropdownMenu.Item>
                     ))}
-                    <DropdownMenu.Item onClick={resetToExample}>
-                      Reset (clear saved state)
-                    </DropdownMenu.Item>
                   </DropdownMenu.Content>
                 </DropdownMenu>
 
@@ -1158,14 +938,6 @@ export function App() {
                 >
                   <GithubLogo size={16} weight="fill" />
                   Import from GitHub
-                </Button>
-
-                <Button
-                  variant="secondary"
-                  onClick={() => void copyShareLink()}
-                >
-                  <Share size={16} />
-                  {shareCopied ? "Copied!" : "Share"}
                 </Button>
               </div>
             </div>
@@ -1301,92 +1073,6 @@ export function App() {
                 }}
               />
             </div>
-
-            {/* Request line */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "10px 16px",
-                borderTop: "1px solid var(--color-kumo-border, #e5e7eb)",
-                flexWrap: "wrap",
-              }}
-            >
-              <select
-                aria-label="HTTP method"
-                value={reqMethod}
-                onChange={(e) =>
-                  setReqMethod(e.target.value as typeof reqMethod)
-                }
-                style={{
-                  fontFamily: "monospace",
-                  fontSize: 12,
-                  padding: "4px 6px",
-                  borderRadius: 4,
-                  border: "1px solid var(--color-kumo-border, #e5e7eb)",
-                  background: "var(--color-kumo-surface)",
-                  color: "var(--text-color-kumo-default)",
-                  cursor: "pointer",
-                }}
-              >
-                {(
-                  ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"] as const
-                ).map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </select>
-              <Input
-                aria-label="Request path"
-                placeholder="/"
-                value={reqPath}
-                onChange={(e) => setReqPath(e.target.value)}
-                style={{
-                  flex: 1,
-                  minWidth: 120,
-                  fontFamily: "monospace",
-                  fontSize: 12,
-                }}
-              />
-            </div>
-
-            {reqMethod !== "GET" && reqMethod !== "OPTIONS" ? (
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 4,
-                  padding: "0 16px 10px",
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 600,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.05em",
-                    color: "var(--text-color-kumo-subdued)",
-                  }}
-                >
-                  Request body
-                </span>
-                <Textarea
-                  aria-label="Request body"
-                  spellCheck={false}
-                  placeholder='{"name": "value"}'
-                  value={reqBody}
-                  onChange={(e) => setReqBody(e.target.value)}
-                  style={{
-                    fontFamily: "monospace",
-                    fontSize: 12,
-                    minHeight: 60,
-                    resize: "vertical",
-                  }}
-                />
-              </div>
-            ) : null}
 
             {/* Controls */}
             <div
@@ -1948,234 +1634,11 @@ export function App() {
           </Button>
         </div>
       </Modal>
-
-      {/* Compliance modal */}
-      <ComplianceModal
-        open={complianceOpen}
-        onClose={() => setComplianceOpen(false)}
-        report={complianceReport}
-      />
-    </div>
-  );
-}
-
-interface ComplianceModalProps {
-  open: boolean;
-  onClose: () => void;
-  report: ComplianceReport | null;
-}
-
-function ComplianceModal({ open, onClose, report }: ComplianceModalProps) {
-  const fileViolations =
-    report?.violations.filter((v) => v.source === "file") ?? [];
-  const runtimeViolations =
-    report?.violations.filter((v) => v.source !== "file") ?? [];
-
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title={
-        <>
-          {report?.blocked ? (
-            <ShieldWarning
-              size={18}
-              weight="fill"
-              style={{ color: "#7c3aed" }}
-            />
-          ) : (
-            <ShieldCheck size={18} weight="fill" style={{ color: "#16a34a" }} />
-          )}
-          Compliance report
-        </>
-      }
-      size="lg"
-    >
-      {!report ? (
-        <p
-          style={{
-            margin: 0,
-            fontSize: 13,
-            color: "var(--text-color-kumo-subdued)",
-          }}
-        >
-          No compliance data yet. Run a worker to see scan results.
-        </p>
-      ) : (
-        <>
-          {report.blocked ? (
-            <div
-              style={{
-                background: "rgba(124, 58, 237, 0.08)",
-                border: "1px solid rgba(124, 58, 237, 0.35)",
-                color: "#6d28d9",
-                padding: "10px 12px",
-                borderRadius: 8,
-                fontSize: 13,
-              }}
-            >
-              Worker execution was blocked. Remove the highlighted secrets and
-              run again.
-            </div>
-          ) : (
-            <p
-              style={{
-                margin: 0,
-                fontSize: 13,
-                color: "var(--text-color-kumo-subdued)",
-              }}
-            >
-              {report.violations.length === 0
-                ? "No PII or secrets detected."
-                : `${report.violations.length} pattern${report.violations.length === 1 ? "" : "s"} detected and redacted in the displayed output.`}
-            </p>
-          )}
-
-          <ComplianceViolationList
-            heading="Source files"
-            items={fileViolations}
-          />
-          <ComplianceViolationList
-            heading="Runtime output"
-            items={runtimeViolations}
-          />
-        </>
-      )}
-
-      <div style={{ display: "flex", justifyContent: "flex-end" }}>
-        <Button variant="primary" onClick={onClose}>
-          Close
-        </Button>
-      </div>
-    </Modal>
-  );
-}
-
-function ComplianceViolationList({
-  heading,
-  items,
-}: {
-  heading: string;
-  items: ComplianceViolation[];
-}) {
-  if (items.length === 0) return null;
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <p
-        style={{
-          margin: 0,
-          fontSize: 11,
-          fontWeight: 600,
-          textTransform: "uppercase",
-          letterSpacing: "0.05em",
-          color: "var(--text-color-kumo-subdued)",
-        }}
-      >
-        {heading} ({items.length})
-      </p>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {items.map((v, i) => (
-          <div
-            key={`${v.ruleId}-${v.source}-${v.file ?? v.logIndex ?? "x"}-${v.line ?? i}`}
-            style={{
-              border: "1px solid var(--color-kumo-border, #e5e7eb)",
-              borderRadius: 6,
-              padding: 10,
-              display: "flex",
-              flexDirection: "column",
-              gap: 4,
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                flexWrap: "wrap",
-              }}
-            >
-              <span
-                style={{
-                  fontSize: 10,
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.04em",
-                  padding: "2px 6px",
-                  borderRadius: 4,
-                  background:
-                    v.severity === "block"
-                      ? "rgba(220, 38, 38, 0.12)"
-                      : "rgba(217, 119, 6, 0.12)",
-                  color: v.severity === "block" ? "#b91c1c" : "#b45309",
-                }}
-              >
-                {v.severity}
-              </span>
-              <span
-                style={{
-                  fontSize: 13,
-                  fontWeight: 600,
-                  color: "var(--text-color-kumo-default)",
-                }}
-              >
-                {v.ruleLabel}
-              </span>
-              {v.file ? (
-                <span
-                  style={{
-                    fontSize: 12,
-                    fontFamily: "monospace",
-                    color: "var(--text-color-kumo-subdued)",
-                  }}
-                >
-                  {v.file}
-                  {v.line ? `:${v.line}` : ""}
-                </span>
-              ) : v.source === "log" && v.logIndex !== undefined ? (
-                <span
-                  style={{
-                    fontSize: 12,
-                    fontFamily: "monospace",
-                    color: "var(--text-color-kumo-subdued)",
-                  }}
-                >
-                  log #{v.logIndex + 1}
-                </span>
-              ) : v.source === "response" ? (
-                <span
-                  style={{
-                    fontSize: 12,
-                    fontFamily: "monospace",
-                    color: "var(--text-color-kumo-subdued)",
-                  }}
-                >
-                  response body
-                </span>
-              ) : null}
-            </div>
-            <pre
-              style={{
-                margin: 0,
-                fontSize: 11,
-                fontFamily: "monospace",
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-word",
-                color: "var(--text-color-kumo-default)",
-                background: "var(--color-kumo-surface)",
-                borderRadius: 4,
-                padding: "6px 8px",
-              }}
-            >
-              {v.preview}
-            </pre>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
 
 const root = document.getElementById("root");
 if (root) {
-  createRoot(root).render(<App />);
+  createRoot(root).render(<Root />);
 }
