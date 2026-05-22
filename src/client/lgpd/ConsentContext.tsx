@@ -72,10 +72,12 @@ export function ConsentProvider({ children }: { children: ReactNode }) {
 		};
 	}, []);
 
+	// `theme` cleanup is owned by useDarkMode (single writer). Here we only
+	// purge i18nextLng on revocation — the i18n detector reads but doesn't
+	// expose a revoke hook, so a stale key would otherwise leak.
 	useEffect(() => {
 		if (!record) return;
 		if (!record.categories.functional) {
-			window.localStorage.removeItem("theme");
 			window.localStorage.removeItem("i18nextLng");
 		}
 	}, [record]);
