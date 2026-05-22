@@ -1,11 +1,3 @@
-// SECURITY: These endpoints accept unauthenticated submissions. They are
-// safe only when the deployment sits behind upstream auth (e.g. Cloudflare
-// Access, as recommended in README.md). Without it, anyone can submit a
-// rights request for any CPF or flood the audit log. The KV binding is
-// optional — without it, requests still validate and rate-limit but are
-// not persisted; the handler returns 503 so the client can surface the
-// misconfiguration instead of silently dropping the submission.
-
 import { hashShort, sha256Hex } from "./hashing";
 
 const RIGHTS_REQUEST_TYPES = new Set([
@@ -29,7 +21,6 @@ interface RightsRequestBody {
 	nameHash?: string;
 	emailHash?: string;
 	cpfHash?: string;
-	cpfLast2?: string;
 	details?: string;
 	locale?: string;
 	confirmedSubject?: boolean;
@@ -43,15 +34,31 @@ interface ConsentAuditBody {
 	ts?: string;
 }
 
-async function checkRateLimit(env: Env, bucketKey: string): Promise<boolean> {
-	// Single named DO instance — all rate-limit buckets share storage but are
-	// keyed independently. Strongly consistent across colos (unlike a
-	// per-isolate Map or KV-with-TTL).
-	const stub = env.LgpdRateLimit.get(
-		env.LgpdRateLimit.idFromName("global"),
-	);
-	const result = await stub.check(bucketKey);
-	return result.allowed;
+// Rate-limit via the LgpdRateLimit Durable Object (declared in wrangler.jsonc
+// and src/env.lgpd.d.ts). The DO survives isolate eviction and shares state
+// across edge nodes — better than an in-memory Map per isolate.
+async function checkRateLimit(
+	env: Env,
+	ipHash: string,
+	scope: "rights" | "audit",
+): Promise<boolean> {
+	const id = env.LgpdRateLimit.idFromName(ipHash);
+	const stub = env.LgpdRateLimit.get(id);
+	const { allowed } = await stub.check(scope);
+	return allowed;
+}
+
+// Reject browser POSTs from other origins. Non-browser clients (no Origin
+// header) are allowed because they're outside the CSRF threat model.
+function isAllowedOrigin(request: Request): boolean {
+	const origin = request.headers.get("Origin");
+	if (!origin) return true;
+	const host = request.headers.get("Host") ?? "";
+	try {
+		return new URL(origin).host === host;
+	} catch {
+		return false;
+	}
 }
 
 function makeProtocol(): string {
@@ -67,12 +74,16 @@ export async function handleRightsRequest(
 	request: Request,
 	env: Env,
 ): Promise<Response> {
+	if (!isAllowedOrigin(request)) {
+		return Response.json({ error: "forbidden-origin" }, { status: 403 });
+	}
+
 	const ip = request.headers.get("CF-Connecting-IP") ?? "";
 	const ua = request.headers.get("user-agent") ?? "";
 	const ipHash = await hashShort(ip || "anon");
 	const uaHash = await hashShort(ua || "anon");
 
-	if (!(await checkRateLimit(env, `rights:${ipHash}`))) {
+	if (!(await checkRateLimit(env, ipHash, "rights"))) {
 		console.log(
 			JSON.stringify({
 				event: "lgpd.rights-request.rate-limited",
@@ -128,7 +139,6 @@ export async function handleRightsRequest(
 			nameHash: body.nameHash,
 			emailHash: body.emailHash,
 			cpfHash: body.cpfHash,
-			cpfLast2: body.cpfLast2,
 		},
 		details: body.details,
 		status: "received" as const,
@@ -137,7 +147,7 @@ export async function handleRightsRequest(
 		ua_hash: uaHash,
 	};
 
-	const kv = env.LGPD_KV;
+	const kv = env.LGPD_KV as KVNamespace | undefined;
 	if (!kv) {
 		console.log(
 			JSON.stringify({
@@ -176,12 +186,16 @@ export async function handleConsentAudit(
 	request: Request,
 	env: Env,
 ): Promise<Response> {
+	if (!isAllowedOrigin(request)) {
+		return Response.json({ error: "forbidden-origin" }, { status: 403 });
+	}
+
 	const ip = request.headers.get("CF-Connecting-IP") ?? "";
 	const ua = request.headers.get("user-agent") ?? "";
 	const ipHash = await hashShort(ip || "anon");
 	const uaHash = await hashShort(ua || "anon");
 
-	if (!(await checkRateLimit(env, `audit:${ipHash}`))) {
+	if (!(await checkRateLimit(env, ipHash, "audit"))) {
 		return Response.json({ error: "rate-limited" }, { status: 429 });
 	}
 
@@ -216,7 +230,7 @@ export async function handleConsentAudit(
 		ua_hash: uaHash,
 	};
 
-	const kv = env.LGPD_KV;
+	const kv = env.LGPD_KV as KVNamespace | undefined;
 	if (kv) {
 		await kv.put(
 			`consent-audit:${body.id}`,
