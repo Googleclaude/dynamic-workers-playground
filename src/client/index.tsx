@@ -398,22 +398,20 @@ function useDarkMode() {
     return window.matchMedia("(prefers-color-scheme: dark)").matches;
   });
 
+  // Single source of truth for the `theme` localStorage key — applies the
+  // DOM attribute on every render and writes/clears storage based on the
+  // current consent state. Consolidated to remove the prior race where a
+  // cleanup effect in ConsentContext could lose to this writer.
   useEffect(() => {
     const mode = dark ? "dark" : "light";
     document.documentElement.setAttribute("data-mode", mode);
     document.documentElement.style.colorScheme = mode;
     if (consent.has("functional")) {
       localStorage.setItem("theme", mode);
-    }
-  }, [dark, consent]);
-
-  // When functional consent is revoked, purge stored theme so the
-  // next visit boots in default light mode.
-  useEffect(() => {
-    if (!consent.has("functional")) {
+    } else {
       localStorage.removeItem("theme");
     }
-  }, [consent]);
+  }, [dark, consent]);
 
   function toggle() {
     setDark((d) => !d);

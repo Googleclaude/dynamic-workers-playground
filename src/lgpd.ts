@@ -1,4 +1,17 @@
-import { hashShort, sha256Hex } from "./hashing";
+// SECURITY: These endpoints accept unauthenticated submissions. They are
+// safe only when the deployment sits behind upstream auth (e.g. Cloudflare
+// Access, as recommended in README.md). Without it, anyone can submit a
+// rights request for any CPF or flood the audit log. The KV binding is
+// optional — without it, requests still validate and rate-limit but are
+// not persisted; the handler returns 503 so the client can surface the
+// misconfiguration instead of silently dropping the submission.
+//
+// All hashes persisted server-side (subject, IP, UA) are HMAC'd with
+// LGPD_HASH_SECRET. Provision via `wrangler secret put LGPD_HASH_SECRET`.
+// Without the secret, the endpoints return 503 — refusing to log weak
+// pseudonymisation is preferable to claiming anonymisation we don't deliver.
+
+import { hmacHex, hmacShort, sha256Hex } from "./hashing";
 
 const RIGHTS_REQUEST_TYPES = new Set([
 	"confirmation",
@@ -32,6 +45,11 @@ interface ConsentAuditBody {
 	categories?: Record<string, boolean>;
 	method?: string;
 	ts?: string;
+}
+
+function getHashSecret(env: Env): string | null {
+	const secret = (env as Env & { LGPD_HASH_SECRET?: string }).LGPD_HASH_SECRET;
+	return secret && secret.length > 0 ? secret : null;
 }
 
 // Rate-limit via the LgpdRateLimit Durable Object (declared in wrangler.jsonc
@@ -78,10 +96,21 @@ export async function handleRightsRequest(
 		return Response.json({ error: "forbidden-origin" }, { status: 403 });
 	}
 
+	const secret = getHashSecret(env);
+	if (!secret) {
+		console.log(
+			JSON.stringify({
+				event: "lgpd.rights-request.secret-missing",
+				ts: new Date().toISOString(),
+			}),
+		);
+		return Response.json({ error: "secret-unavailable" }, { status: 503 });
+	}
+
 	const ip = request.headers.get("CF-Connecting-IP") ?? "";
 	const ua = request.headers.get("user-agent") ?? "";
-	const ipHash = await hashShort(ip || "anon");
-	const uaHash = await hashShort(ua || "anon");
+	const ipHash = await hmacShort(secret, ip || "anon");
+	const uaHash = await hmacShort(secret, ua || "anon");
 
 	if (!(await checkRateLimit(env, ipHash, "rights"))) {
 		console.log(
@@ -122,11 +151,21 @@ export async function handleRightsRequest(
 		return Response.json({ error: "invalid-cpf-hash" }, { status: 400 });
 	}
 
+	// Re-HMAC the client-supplied subject hashes with the server secret.
+	// The client SHA-256 is what we agreed to over the wire; the server HMAC
+	// is what we persist. An attacker who exfiltrates KV cannot rainbow-table
+	// the stored values without also exfiltrating LGPD_HASH_SECRET.
+	const subjectNameHash = await hmacHex(secret, body.nameHash);
+	const subjectEmailHash = await hmacHex(secret, body.emailHash);
+	const subjectCpfHash = body.cpfHash
+		? await hmacHex(secret, body.cpfHash)
+		: undefined;
+
 	const id = crypto.randomUUID();
 	const protocol = makeProtocol();
 	const receivedAt = new Date().toISOString();
 	const integrity = await sha256Hex(
-		`${id}|${body.requestType}|${body.nameHash}|${body.emailHash}|${receivedAt}`,
+		`${id}|${body.requestType}|${subjectNameHash}|${subjectEmailHash}|${receivedAt}`,
 	);
 
 	const record = {
@@ -136,9 +175,9 @@ export async function handleRightsRequest(
 		requestType: body.requestType,
 		locale: body.locale ?? "en",
 		subject: {
-			nameHash: body.nameHash,
-			emailHash: body.emailHash,
-			cpfHash: body.cpfHash,
+			nameHash: subjectNameHash,
+			emailHash: subjectEmailHash,
+			cpfHash: subjectCpfHash,
 		},
 		details: body.details,
 		status: "received" as const,
@@ -190,10 +229,15 @@ export async function handleConsentAudit(
 		return Response.json({ error: "forbidden-origin" }, { status: 403 });
 	}
 
+	const secret = getHashSecret(env);
+	if (!secret) {
+		return Response.json({ error: "secret-unavailable" }, { status: 503 });
+	}
+
 	const ip = request.headers.get("CF-Connecting-IP") ?? "";
 	const ua = request.headers.get("user-agent") ?? "";
-	const ipHash = await hashShort(ip || "anon");
-	const uaHash = await hashShort(ua || "anon");
+	const ipHash = await hmacShort(secret, ip || "anon");
+	const uaHash = await hmacShort(secret, ua || "anon");
 
 	if (!(await checkRateLimit(env, ipHash, "audit"))) {
 		return Response.json({ error: "rate-limited" }, { status: 429 });
