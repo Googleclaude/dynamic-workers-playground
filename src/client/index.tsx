@@ -420,6 +420,211 @@ function useDarkMode() {
   return { dark, toggle };
 }
 
+function TypecheckBadge({
+  loading,
+  diagnostics,
+  error,
+  onClick,
+}: {
+  loading: boolean;
+  diagnostics: import("../typecheck").TypeCheckDiagnostic[];
+  error: string | null;
+  onClick: () => void;
+}) {
+  const errors = diagnostics.filter((d) => d.severity === "error").length;
+  const warnings = diagnostics.filter((d) => d.severity === "warning").length;
+
+  let label: string;
+  let color: string;
+  if (error) {
+    label = "tsc: unavailable";
+    color = "#9ca3af";
+  } else if (loading) {
+    label = "tsc: checking…";
+    color = "#9ca3af";
+  } else if (errors > 0) {
+    label = `${errors} error${errors === 1 ? "" : "s"}${warnings ? `, ${warnings} warn` : ""}`;
+    color = "#dc2626";
+  } else if (warnings > 0) {
+    label = `${warnings} warning${warnings === 1 ? "" : "s"}`;
+    color = "#d97706";
+  } else {
+    label = "tsc: clean";
+    color = "#16a34a";
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={error ?? "Click to inspect type-check diagnostics"}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        background: "none",
+        border: `1px solid ${color}`,
+        color,
+        padding: "4px 10px",
+        borderRadius: 6,
+        fontSize: 12,
+        cursor: "pointer",
+        fontFamily: "monospace",
+      }}
+    >
+      <span
+        style={{
+          width: 6,
+          height: 6,
+          borderRadius: "50%",
+          background: color,
+          display: "inline-block",
+        }}
+      />
+      {label}
+    </button>
+  );
+}
+
+function TypecheckModal({
+  open,
+  onClose,
+  diagnostics,
+  error,
+}: {
+  open: boolean;
+  onClose: () => void;
+  diagnostics: import("../typecheck").TypeCheckDiagnostic[];
+  error: string | null;
+}) {
+  return (
+    <Modal open={open} onClose={onClose} title="Type-check report" size="lg">
+      {error ? (
+        <div
+          style={{
+            background: "rgba(220, 38, 38, 0.08)",
+            border: "1px solid rgba(220, 38, 38, 0.35)",
+            color: "#b91c1c",
+            padding: "10px 12px",
+            borderRadius: 8,
+            fontSize: 13,
+          }}
+        >
+          The type-checker couldn’t initialise: {error}
+          <br />
+          The first run downloads the TypeScript lib (~200 KB) and caches it
+          in localStorage. Subsequent checks are fully offline. If this
+          persists, your browser may be blocking access to jsdelivr.
+        </div>
+      ) : diagnostics.length === 0 ? (
+        <p
+          style={{
+            margin: 0,
+            fontSize: 13,
+            color: "var(--text-color-kumo-subdued)",
+          }}
+        >
+          No diagnostics. Your worker source type-checks cleanly against the
+          built-in worker ambient types.
+        </p>
+      ) : (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+            maxHeight: 360,
+            overflow: "auto",
+          }}
+        >
+          {diagnostics.map((d, i) => (
+            <div
+              key={`${d.file}-${d.line}-${d.column}-${d.code}-${i}`}
+              style={{
+                border: "1px solid var(--color-kumo-border, #e5e7eb)",
+                borderRadius: 6,
+                padding: 10,
+                display: "flex",
+                flexDirection: "column",
+                gap: 4,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  flexWrap: "wrap",
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.04em",
+                    padding: "2px 6px",
+                    borderRadius: 4,
+                    background:
+                      d.severity === "error"
+                        ? "rgba(220, 38, 38, 0.12)"
+                        : d.severity === "warning"
+                          ? "rgba(217, 119, 6, 0.12)"
+                          : "rgba(107, 114, 128, 0.12)",
+                    color:
+                      d.severity === "error"
+                        ? "#b91c1c"
+                        : d.severity === "warning"
+                          ? "#b45309"
+                          : "#4b5563",
+                  }}
+                >
+                  {d.severity}
+                </span>
+                <span
+                  style={{
+                    fontSize: 12,
+                    fontFamily: "monospace",
+                    color: "var(--text-color-kumo-subdued)",
+                  }}
+                >
+                  {d.file}:{d.line}:{d.column}
+                </span>
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontFamily: "monospace",
+                    color: "var(--text-color-kumo-subdued)",
+                  }}
+                >
+                  TS{d.code}
+                </span>
+              </div>
+              <pre
+                style={{
+                  margin: 0,
+                  fontSize: 12,
+                  fontFamily: "monospace",
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                  color: "var(--text-color-kumo-default)",
+                }}
+              >
+                {d.message}
+              </pre>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <Button variant="primary" onClick={onClose}>
+          Close
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
 function LayersLogo() {
   return (
     <svg
@@ -497,6 +702,38 @@ export function Playground() {
   const [githubOpen, setGithubOpen] = useState(false);
   const [addFileName, setAddFileName] = useState("");
   const [githubUrl, setGitHubUrl] = useState("");
+  const [typeDiagnostics, setTypeDiagnostics] = useState<
+    import("../typecheck").TypeCheckDiagnostic[]
+  >([]);
+  const [typeChecking, setTypeChecking] = useState(false);
+  const [typeCheckError, setTypeCheckError] = useState<string | null>(null);
+  const [typecheckOpen, setTypecheckOpen] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const handle = window.setTimeout(async () => {
+      try {
+        setTypeChecking(true);
+        const { typecheck } = await import("../typecheck");
+        const result = await typecheck(files);
+        if (cancelled) return;
+        setTypeDiagnostics(result.diagnostics);
+        setTypeCheckError(null);
+      } catch (err) {
+        if (cancelled) return;
+        setTypeCheckError(
+          err instanceof Error ? err.message : String(err)
+        );
+        setTypeDiagnostics([]);
+      } finally {
+        if (!cancelled) setTypeChecking(false);
+      }
+    }, 800);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
+  }, [files]);
 
   const orderedFiles = useMemo(() => Object.keys(files), [files]);
   const currentValue = currentFile ? (files[currentFile] ?? "") : "";
@@ -1084,7 +1321,7 @@ export function Playground() {
                 gap: 8,
               }}
             >
-              <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <Button
                   variant="primary"
                   disabled={running}
@@ -1093,6 +1330,12 @@ export function Playground() {
                   <Play size={14} weight="fill" />
                   {running ? "Running..." : "Run Worker"}
                 </Button>
+                <TypecheckBadge
+                  loading={typeChecking}
+                  diagnostics={typeDiagnostics}
+                  error={typeCheckError}
+                  onClick={() => setTypecheckOpen(true)}
+                />
                 <Button variant="secondary" onClick={formatCurrentFile}>
                   Format
                 </Button>
@@ -1632,6 +1875,13 @@ export function Playground() {
           </Button>
         </div>
       </Modal>
+
+      <TypecheckModal
+        open={typecheckOpen}
+        onClose={() => setTypecheckOpen(false)}
+        diagnostics={typeDiagnostics}
+        error={typeCheckError}
+      />
     </div>
   );
 }
