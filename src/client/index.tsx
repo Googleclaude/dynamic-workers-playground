@@ -25,7 +25,6 @@ import { createRoot } from "react-dom/client";
 import { useEffect, useMemo, useState } from "react";
 import { useConsent } from "./lgpd/ConsentContext";
 import Root from "./Root";
-import "./i18n";
 import "./lgpd.css";
 
 interface ModalProps {

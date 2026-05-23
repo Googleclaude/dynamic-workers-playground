@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { useTranslation } from "react-i18next";
-import { Link } from "react-router-dom";
+import { useTranslation } from "../i18n";
+import { Link } from "../router";
 import { RIGHTS_REQUEST_TYPES } from "../lgpd/constants";
 import type { RightsRequestType } from "../lgpd/constants";
 import { submitRightsRequest } from "../lgpd/api";
@@ -10,7 +10,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_DETAILS = 2000;
 
 export default function DataRightsForm() {
-	const { t, i18n } = useTranslation("rights");
+	const { t, lang } = useTranslation("rights");
 	const { t: tc } = useTranslation();
 
 	const [requestType, setRequestType] = useState<RightsRequestType>("access");
@@ -64,7 +64,7 @@ export default function DataRightsForm() {
 				email,
 				cpf: cpf.trim() || undefined,
 				details,
-				locale: i18n.language,
+				locale: lang,
 				confirmedSubject: confirm,
 			});
 			setResult(res);

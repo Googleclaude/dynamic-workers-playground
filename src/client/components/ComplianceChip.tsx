@@ -1,5 +1,5 @@
-import { Link } from "react-router-dom";
-import { useTranslation } from "react-i18next";
+import { Link } from "../router";
+import { useTranslation } from "../i18n";
 import LanguageSwitcher from "./LanguageSwitcher";
 
 // Floating compliance chip used on the Playground route, where the full

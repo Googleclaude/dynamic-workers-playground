@@ -7,7 +7,7 @@ import {
 	useState,
 } from "react";
 import type { ReactNode } from "react";
-import i18n from "../i18n";
+import { getLang } from "../i18n";
 import { CONSENT_VERSION } from "./constants";
 import {
 	CONSENT_CHANGED_EVENT,
@@ -49,7 +49,7 @@ function buildRecord(
 	return {
 		version: CONSENT_VERSION,
 		timestamp: new Date().toISOString(),
-		locale: i18n.language || i18n.resolvedLanguage || "en",
+		locale: getLang(),
 		categories: { ...categories, necessary: true },
 		method,
 		id: newConsentId(),
