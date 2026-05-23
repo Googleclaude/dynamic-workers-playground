@@ -20,7 +20,7 @@
 		"emailPlaceholder": "nome@exemplo.com",
 		"cpf": "CPF (opcional)",
 		"cpfPlaceholder": "000.000.000-00",
-		"cpfHelp": "Opcional. Armazenamos apenas um hash SHA-256 e os dois últimos dígitos.",
+		"cpfHelp": "Opcional. O CPF é hashed (SHA-256) no seu dispositivo e re-hashed (HMAC) no servidor antes do armazenamento. O texto em claro nunca é armazenado.",
 		"details": "Detalhes da sua solicitação",
 		"detailsPlaceholder": "Descreva os dados ou a atividade de tratamento à qual está se referindo (máx. 2000 caracteres).",
 		"confirmSubject": "Confirmo que sou o titular dos dados ou estou autorizado a agir em seu nome.",
@@ -38,7 +38,7 @@
 		"title": "Solicitação recebida",
 		"description": "Sua solicitação foi registrada. Guarde o número de protocolo abaixo — você precisará dele para acompanhamento.",
 		"protocolLabel": "Número de protocolo",
-		"sla": "Responderemos em até 15 dias. As respostas são enviadas ao e-mail informado.",
+		"sla": "Responderemos em até 15 dias usando o número de protocolo acima. O e-mail informado é hashed antes da transmissão e não pode ser usado para entrar em contato diretamente — entre em contato com o Encarregado pelo Tratamento de Dados informando seu protocolo para receber a resposta.",
 		"newRequest": "Enviar outra solicitação"
 	}
 }

@@ -20,7 +20,7 @@
 		"emailPlaceholder": "name@example.com",
 		"cpf": "CPF (optional)",
 		"cpfPlaceholder": "000.000.000-00",
-		"cpfHelp": "Optional. We store only a SHA-256 hash and the last two digits.",
+		"cpfHelp": "Optional. The CPF is hashed (SHA-256) on your device and re-hashed (HMAC) on the server before storage. Plain text is never stored.",
 		"details": "Details of your request",
 		"detailsPlaceholder": "Describe the data or processing activity you are referring to (max 2000 characters).",
 		"confirmSubject": "I confirm I am the data subject or am authorized to act on their behalf.",
@@ -38,7 +38,7 @@
 		"title": "Request received",
 		"description": "Your request was recorded. Please save the protocol number below — you will need it to follow up.",
 		"protocolLabel": "Protocol number",
-		"sla": "We will respond within 15 days. Replies are sent to the email you provided.",
+		"sla": "We will respond within 15 days via the protocol number above. The email you provided is hashed before transmission and cannot be used to reach you directly — please contact the Data Protection Officer with your protocol number to receive the response.",
 		"newRequest": "Submit another request"
 	}
 }
