@@ -10,7 +10,7 @@ const ALLOWED_DOWNLOAD_HOSTS = new Set([
   "api.github.com",
 ]);
 
-function isSafeDownloadUrl(raw: string | undefined): boolean {
+export function isSafeDownloadUrl(raw: string | undefined): boolean {
   if (!raw) return false;
   try {
     const u = new URL(raw);
@@ -23,7 +23,7 @@ function isSafeDownloadUrl(raw: string | undefined): boolean {
   }
 }
 
-function parseGitHubUrl(urlString: string): {
+export function parseGitHubUrl(urlString: string): {
   owner: string;
   repo: string;
   branch: string;
