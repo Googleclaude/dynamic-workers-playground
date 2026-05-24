@@ -28,6 +28,8 @@ const RIGHTS_REQUEST_TYPES = new Set([
 const HEX64_RE = /^[0-9a-f]{64}$/;
 const UUID_RE =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+// ISO 8601 date-time: 2026-05-24T00:00:00.000Z (loose, validated by Date constructor)
+const ISO_TS_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
 
 interface RightsRequestBody {
 	requestType?: string;
@@ -264,12 +266,24 @@ export async function handleConsentAudit(
 		return Response.json({ error: "invalid-payload" }, { status: 400 });
 	}
 
+	// Validate caller-supplied timestamp: must be ISO 8601 UTC and not in
+	// the future by more than 5 min (clock-skew tolerance) or in the past
+	// by more than 24 h. Fall back to server time on invalid input.
+	let auditTs = new Date().toISOString();
+	if (body.ts && typeof body.ts === "string" && ISO_TS_RE.test(body.ts)) {
+		const supplied = new Date(body.ts).getTime();
+		const now = Date.now();
+		if (!Number.isNaN(supplied) && supplied <= now + 5 * 60_000 && supplied >= now - 24 * 60 * 60_000) {
+			auditTs = body.ts;
+		}
+	}
+
 	const auditRecord = {
 		id: body.id,
 		version: body.version,
 		categories: body.categories,
 		method: body.method,
-		ts: body.ts ?? new Date().toISOString(),
+		ts: auditTs,
 		ip_hash: ipHash,
 		ua_hash: uaHash,
 	};

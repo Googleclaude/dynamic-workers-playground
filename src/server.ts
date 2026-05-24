@@ -2,9 +2,37 @@ import { exports } from "cloudflare:workers";
 import { createWorker } from "@cloudflare/worker-bundler";
 import { handleGitHubImport } from "./github";
 import { handleConsentAudit, handleRightsRequest } from "./lgpd";
+import {
+  redactString,
+  scanFiles,
+  type ComplianceViolation,
+} from "./compliance";
 
 export { DynamicWorkerTail, LogSession } from "./logging";
 export { LgpdRateLimit } from "./lgpd-rate-limit";
+
+// Maximum total payload accepted for /api/run (10 MB uncompressed).
+const MAX_RUN_BODY_BYTES = 10 * 1024 * 1024;
+// Maximum number of source files per run request.
+const MAX_FILE_COUNT = 50;
+// Maximum size of a single source file (1 MB).
+const MAX_FILE_BYTES = 1 * 1024 * 1024;
+
+// Security headers added to every API response.
+const SECURITY_HEADERS: Record<string, string> = {
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+  "Permissions-Policy": "interest-cohort=()",
+};
+
+function withSecurityHeaders(response: Response): Response {
+  const res = new Response(response.body, response);
+  for (const [k, v] of Object.entries(SECURITY_HEADERS)) {
+    res.headers.set(k, v);
+  }
+  return res;
+}
 
 type LoaderExports = {
   LogSession: {
@@ -69,6 +97,7 @@ async function executeWorker(
   worker: WorkerStub,
   state: WorkerState,
   workerId: string,
+  sourceWarnings: ComplianceViolation[],
   pathname = "/"
 ): Promise<Response> {
   const entrypoint = worker.getEntrypoint() as Fetcher & {
@@ -114,42 +143,97 @@ async function executeWorker(
   }
 
   const runTime = Date.now() - runStart;
-  const logs = await logWaiter.getLogs(1000);
+  const rawLogs = (await logWaiter.getLogs(1000)) as Array<{
+    level: string;
+    message: string;
+    timestamp: number;
+  }>;
 
-  const headers: Record<string, string> = {};
+  const runtimeViolations: ComplianceViolation[] = [];
+
+  // Redact PII / secrets from every output channel before sending to client.
+  const redactedHeaders: Record<string, string> = {};
   workerResponse.headers.forEach((value, key) => {
-    headers[key] = value;
+    const { redacted, violations } = redactString(value, "response");
+    redactedHeaders[key] = redacted;
+    runtimeViolations.push(...violations);
   });
 
+  const { redacted: redactedBody, violations: bodyViolations } = redactString(
+    responseBody,
+    "response"
+  );
+  runtimeViolations.push(...bodyViolations);
+
+  const redactedLogs = rawLogs.map((log, index) => {
+    const { redacted, violations } = redactString(log.message, "log", {
+      logIndex: index,
+    });
+    runtimeViolations.push(...violations);
+    return { ...log, message: redacted };
+  });
+
+  let redactedWorkerError: { message: string; stack?: string } | null = null;
+  if (workerError) {
+    const { redacted: redactedMessage, violations: msgViolations } =
+      redactString(workerError.message, "response");
+    runtimeViolations.push(...msgViolations);
+    redactedWorkerError = { message: redactedMessage };
+    if (workerError.stack) {
+      const { redacted: redactedStack, violations: stackViolations } =
+        redactString(workerError.stack, "response");
+      runtimeViolations.push(...stackViolations);
+      redactedWorkerError.stack = redactedStack;
+    }
+  }
+
+  const safeBundleInfo = bundleInfo
+    ? {
+        mainModule: redactInPlace(bundleInfo.mainModule),
+        modules: bundleInfo.modules.map(redactInPlace),
+        warnings: bundleInfo.warnings.map(redactInPlace),
+      }
+    : { mainModule: "(cached)", modules: [], warnings: [] };
+
   return Response.json({
-    bundleInfo: bundleInfo ?? {
-      mainModule: "(cached)",
-      modules: [],
-      warnings: [],
-    },
+    bundleInfo: safeBundleInfo,
     response: {
       status: workerResponse.status,
-      headers,
-      body: responseBody,
+      headers: redactedHeaders,
+      body: redactedBody,
     },
-    workerError,
-    logs,
+    workerError: redactedWorkerError,
+    logs: redactedLogs,
     timing: {
       buildTime,
       loadTime,
       runTime,
       totalTime: buildTime + loadTime + runTime,
     },
+    compliance: {
+      blocked: false,
+      violations: [...sourceWarnings, ...runtimeViolations].map(
+        redactViolationFile
+      ),
+    },
   });
 }
 
+function redactInPlace(value: string): string {
+  return redactString(value, "response").redacted;
+}
+
+function redactViolationFile(v: ComplianceViolation): ComplianceViolation {
+  return v.file ? { ...v, file: redactInPlace(v.file) } : v;
+}
+
 function buildErrorResponse(error: unknown): Response {
+  // Log full error internally; send only the redacted message to the client.
+  // Never return a stack trace — it can expose internal module paths.
   console.error("Error in dynamic-workers-playground:", error);
+  const rawMessage = error instanceof Error ? error.message : "Unknown error";
   return Response.json(
-    {
-      error: error instanceof Error ? error.message : "Unknown error",
-      stack: error instanceof Error ? error.stack : undefined,
-    },
+    { error: redactInPlace(rawMessage) },
     { status: 500 }
   );
 }
@@ -195,36 +279,104 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === "/api/github" && request.method === "POST") {
-      return handleGitHubImport(request);
+      return withSecurityHeaders(await handleGitHubImport(request));
     }
 
     if (
       url.pathname === "/api/lgpd/rights-request" &&
       request.method === "POST"
     ) {
-      return handleRightsRequest(request, env);
+      return withSecurityHeaders(await handleRightsRequest(request, env));
     }
 
     if (
       url.pathname === "/api/lgpd/consent-audit" &&
       request.method === "POST"
     ) {
-      return handleConsentAudit(request, env);
+      return withSecurityHeaders(await handleConsentAudit(request, env));
     }
 
     if (url.pathname === "/api/run" && request.method === "POST") {
       try {
-        const { files, pathname, options } =
-          (await request.json()) as RunRequestBody;
-
-        if (!files || Object.keys(files).length === 0) {
-          return Response.json(
-            { error: "At least one source file is required." },
-            { status: 400 }
+        // Enforce body size limit before parsing.
+        const contentLength = Number(request.headers.get("content-length") ?? 0);
+        if (contentLength > MAX_RUN_BODY_BYTES) {
+          return withSecurityHeaders(
+            Response.json({ error: "Request body too large." }, { status: 413 })
           );
         }
 
+        const { files, pathname, options } =
+          (await request.json()) as RunRequestBody;
+
+        if (!files || typeof files !== "object" || Array.isArray(files)) {
+          return withSecurityHeaders(
+            Response.json({ error: "files must be an object." }, { status: 400 })
+          );
+        }
+
+        const fileEntries = Object.entries(files);
+        if (fileEntries.length === 0) {
+          return withSecurityHeaders(
+            Response.json(
+              { error: "At least one source file is required." },
+              { status: 400 }
+            )
+          );
+        }
+
+        if (fileEntries.length > MAX_FILE_COUNT) {
+          return withSecurityHeaders(
+            Response.json(
+              { error: `Too many files (max ${MAX_FILE_COUNT}).` },
+              { status: 400 }
+            )
+          );
+        }
+
+        for (const [name, content] of fileEntries) {
+          if (typeof name !== "string" || typeof content !== "string") {
+            return withSecurityHeaders(
+              Response.json(
+                { error: "File names and contents must be strings." },
+                { status: 400 }
+              )
+            );
+          }
+          if (new TextEncoder().encode(content).length > MAX_FILE_BYTES) {
+            return withSecurityHeaders(
+              Response.json(
+                { error: `File "${name}" exceeds the 1 MB size limit.` },
+                { status: 400 }
+              )
+            );
+          }
+        }
+
         const normalizedFiles = normalizeFiles(files);
+
+        // Compliance scan: block if secrets found; collect redact-only violations.
+        const allViolations = scanFiles(normalizedFiles);
+        const blocking = allViolations.filter((v) => v.severity === "block");
+        if (blocking.length > 0) {
+          return withSecurityHeaders(
+            Response.json(
+              {
+                error:
+                  "Compliance check failed: secrets detected in source files.",
+                compliance: {
+                  blocked: true,
+                  violations: blocking.map(redactViolationFile),
+                },
+              },
+              { status: 400 }
+            )
+          );
+        }
+        const sourceWarnings = allViolations.filter(
+          (v) => v.severity === "redact"
+        );
+
         const workerId = await createWorkerId(normalizedFiles, options);
         const state: WorkerState = {
           bundleInfo: null,
@@ -268,12 +420,14 @@ export default {
           };
         });
 
-        return executeWorker(worker, state, workerId, pathname ?? "/");
+        return withSecurityHeaders(
+          await executeWorker(worker, state, workerId, sourceWarnings, pathname ?? "/")
+        );
       } catch (error) {
-        return buildErrorResponse(error);
+        return withSecurityHeaders(buildErrorResponse(error));
       }
     }
 
-    return new Response("Not found", { status: 404 });
+    return withSecurityHeaders(new Response("Not found", { status: 404 }));
   },
 } satisfies ExportedHandler<Env>;

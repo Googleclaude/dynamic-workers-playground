@@ -5,6 +5,24 @@ interface GitHubContent {
   download_url?: string;
 }
 
+const ALLOWED_DOWNLOAD_HOSTS = new Set([
+  "raw.githubusercontent.com",
+  "api.github.com",
+]);
+
+function isSafeDownloadUrl(raw: string | undefined): boolean {
+  if (!raw) return false;
+  try {
+    const u = new URL(raw);
+    return (
+      (u.protocol === "https:" || u.protocol === "http:") &&
+      ALLOWED_DOWNLOAD_HOSTS.has(u.hostname)
+    );
+  } catch {
+    return false;
+  }
+}
+
 function parseGitHubUrl(urlString: string): {
   owner: string;
   repo: string;
@@ -70,8 +88,8 @@ async function fetchGitHubDirectory(
     const contents = (await response.json()) as GitHubContent | GitHubContent[];
 
     if (!Array.isArray(contents)) {
-      if (contents.type === "file" && contents.download_url) {
-        const fileResponse = await fetch(contents.download_url);
+      if (contents.type === "file" && isSafeDownloadUrl(contents.download_url)) {
+        const fileResponse = await fetch(contents.download_url!);
         if (fileResponse.ok) {
           const content = await fileResponse.text();
           const relativePath = basePath ? contents.path.replace(`${basePath}/`, "") : contents.path;
@@ -83,8 +101,8 @@ async function fetchGitHubDirectory(
 
     await Promise.all(
       contents.map(async (item) => {
-        if (item.type === "file" && item.download_url) {
-          const fileResponse = await fetch(item.download_url);
+        if (item.type === "file" && isSafeDownloadUrl(item.download_url)) {
+          const fileResponse = await fetch(item.download_url!);
           if (fileResponse.ok) {
             const content = await fileResponse.text();
             const relativePath = basePath ? item.path.replace(`${basePath}/`, "") : item.path;

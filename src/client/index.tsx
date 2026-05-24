@@ -15,6 +15,8 @@ import {
   Moon,
   Play,
   Plus,
+  ShieldCheck,
+  ShieldWarning,
   Sun,
   X,
 } from "@phosphor-icons/react";
@@ -122,6 +124,22 @@ function Modal({ open, onClose, title, size = "sm", children }: ModalProps) {
 
 type PlaygroundFiles = Record<string, string>;
 
+interface ComplianceViolation {
+  ruleId: string;
+  ruleLabel: string;
+  severity: "block" | "redact";
+  source: "file" | "response" | "log";
+  file?: string;
+  line?: number;
+  logIndex?: number;
+  preview: string;
+}
+
+interface ComplianceReport {
+  blocked: boolean;
+  violations: ComplianceViolation[];
+}
+
 interface RunResult {
   bundleInfo: {
     mainModule: string;
@@ -148,6 +166,7 @@ interface RunResult {
     runTime: number;
     totalTime: number;
   };
+  compliance?: ComplianceReport;
 }
 
 interface GitHubImportResult {
@@ -155,7 +174,7 @@ interface GitHubImportResult {
   files?: PlaygroundFiles;
 }
 
-type StatusTone = "idle" | "running" | "success" | "error";
+type StatusTone = "idle" | "running" | "success" | "error" | "blocked";
 
 const EXAMPLES: Array<{
   id: string;
@@ -625,6 +644,136 @@ function TypecheckModal({
   );
 }
 
+function ComplianceModal({
+  open,
+  onClose,
+  report,
+}: {
+  open: boolean;
+  onClose: () => void;
+  report: ComplianceReport | null;
+}) {
+  if (!report) return null;
+  const grouped = report.violations.reduce<Record<string, ComplianceViolation[]>>(
+    (acc, v) => {
+      const key = v.source === "file" ? `Source: ${v.file ?? ""}` : `Output (${v.source})`;
+      (acc[key] ??= []).push(v);
+      return acc;
+    },
+    {}
+  );
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={
+        <>
+          {report.blocked ? (
+            <ShieldWarning size={16} weight="fill" style={{ color: "#dc2626" }} />
+          ) : (
+            <ShieldWarning size={16} weight="fill" style={{ color: "#d97706" }} />
+          )}
+          Compliance report
+        </>
+      }
+      size="lg"
+    >
+      {report.violations.length === 0 ? (
+        <p style={{ margin: 0, fontSize: 13, color: "var(--text-color-kumo-subdued)" }}>
+          No violations.
+        </p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, maxHeight: 360, overflow: "auto" }}>
+          {Object.entries(grouped).map(([group, items]) => (
+            <div key={group}>
+              <p
+                style={{
+                  margin: "0 0 6px",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                  color: "var(--text-color-kumo-subdued)",
+                }}
+              >
+                {group}
+              </p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                {items.map((v, i) => (
+                  <div
+                    key={`${v.ruleId}-${v.source}-${i}`}
+                    style={{
+                      border: "1px solid var(--color-kumo-border, #e5e7eb)",
+                      borderRadius: 6,
+                      padding: "8px 10px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        marginBottom: 4,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          textTransform: "uppercase",
+                          padding: "2px 5px",
+                          borderRadius: 4,
+                          background:
+                            v.severity === "block"
+                              ? "rgba(220,38,38,0.12)"
+                              : "rgba(217,119,6,0.12)",
+                          color: v.severity === "block" ? "#b91c1c" : "#92400e",
+                        }}
+                      >
+                        {v.severity}
+                      </span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-color-kumo-default)" }}>
+                        {v.ruleLabel}
+                      </span>
+                      {v.line ? (
+                        <span style={{ fontSize: 11, fontFamily: "monospace", color: "var(--text-color-kumo-subdued)" }}>
+                          line {v.line}
+                        </span>
+                      ) : null}
+                    </div>
+                    <pre
+                      style={{
+                        margin: 0,
+                        fontSize: 11,
+                        fontFamily: "monospace",
+                        color: "var(--text-color-kumo-subdued)",
+                        whiteSpace: "pre-wrap",
+                        wordBreak: "break-word",
+                        background: "var(--color-kumo-surface-subdued, rgba(0,0,0,0.03))",
+                        padding: "4px 6px",
+                        borderRadius: 4,
+                      }}
+                    >
+                      {v.preview}
+                    </pre>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <Button variant="primary" onClick={onClose}>
+          Close
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
 function LayersLogo() {
   return (
     <svg
@@ -700,6 +849,9 @@ export function Playground() {
   const [importing, setImporting] = useState(false);
   const [addFileOpen, setAddFileOpen] = useState(false);
   const [githubOpen, setGithubOpen] = useState(false);
+  const [complianceOpen, setComplianceOpen] = useState(false);
+  const [complianceReport, setComplianceReport] =
+    useState<ComplianceReport | null>(null);
   const [addFileName, setAddFileName] = useState("");
   const [githubUrl, setGitHubUrl] = useState("");
   const [typeDiagnostics, setTypeDiagnostics] = useState<
@@ -743,6 +895,7 @@ export function Playground() {
     setCurrentFile(inferPrimaryFile(nextFiles));
     setResult(null);
     setError(null);
+    setComplianceReport(null);
     setStatus({ tone: "idle", label: "Ready" });
   }
 
@@ -905,13 +1058,27 @@ export function Playground() {
       const rawPayload: unknown = await response.json();
       const payload = rawPayload as RunResult & {
         error?: string;
-        stack?: string;
+        compliance?: ComplianceReport;
       };
+
+      // Blocked by compliance scanner (server returns 400 with compliance report).
+      if (response.status === 400 && payload.compliance?.blocked) {
+        setResult(null);
+        setError(null);
+        setComplianceReport(payload.compliance);
+        setStatus({
+          tone: "blocked",
+          label: `Blocked — ${payload.compliance.violations.length} issue${payload.compliance.violations.length === 1 ? "" : "s"}`,
+        });
+        return;
+      }
+
       if (!response.ok || payload.error) {
         throw new Error(payload.error || "Failed to run worker.");
       }
 
       setResult(payload);
+      setComplianceReport(payload.compliance ?? null);
 
       if (payload.workerError) {
         setStatus({ tone: "error", label: "Runtime Error" });
@@ -922,7 +1089,6 @@ export function Playground() {
       const nextError = {
         message:
           runError instanceof Error ? runError.message : String(runError),
-        stack: runError instanceof Error ? runError.stack : undefined,
       };
 
       setResult(null);
@@ -1412,6 +1578,117 @@ export function Playground() {
                 gap: 16,
               }}
             >
+              {/* Compliance blocked banner */}
+              {status.tone === "blocked" && complianceReport ? (
+                <div
+                  style={{
+                    background: "rgba(220, 38, 38, 0.07)",
+                    border: "1px solid rgba(220, 38, 38, 0.35)",
+                    borderRadius: 8,
+                    padding: "12px 14px",
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: 10,
+                  }}
+                >
+                  <ShieldWarning
+                    size={18}
+                    weight="fill"
+                    style={{ color: "#dc2626", flexShrink: 0, marginTop: 1 }}
+                  />
+                  <div style={{ flex: 1 }}>
+                    <p
+                      style={{
+                        margin: "0 0 4px",
+                        fontWeight: 600,
+                        fontSize: 13,
+                        color: "#b91c1c",
+                      }}
+                    >
+                      Blocked by compliance scanner
+                    </p>
+                    <p
+                      style={{
+                        margin: "0 0 8px",
+                        fontSize: 12,
+                        color: "#b91c1c",
+                      }}
+                    >
+                      {complianceReport.violations.length} secret
+                      {complianceReport.violations.length === 1 ? "" : "s"}{" "}
+                      detected in source files. Remove them before running.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setComplianceOpen(true)}
+                      style={{
+                        fontSize: 12,
+                        color: "#b91c1c",
+                        background: "none",
+                        border: "1px solid #b91c1c",
+                        borderRadius: 5,
+                        padding: "3px 8px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      View details
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Compliance warnings (non-blocking, shown inline) */}
+              {status.tone !== "blocked" &&
+              complianceReport &&
+              complianceReport.violations.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setComplianceOpen(true)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    background: "rgba(217, 119, 6, 0.07)",
+                    border: "1px solid rgba(217, 119, 6, 0.35)",
+                    borderRadius: 8,
+                    padding: "8px 12px",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    width: "100%",
+                  }}
+                >
+                  <ShieldWarning
+                    size={16}
+                    weight="fill"
+                    style={{ color: "#d97706", flexShrink: 0 }}
+                  />
+                  <span style={{ fontSize: 12, color: "#92400e" }}>
+                    {complianceReport.violations.length} PII/secret pattern
+                    {complianceReport.violations.length === 1 ? "" : "s"}{" "}
+                    redacted from output — click to review
+                  </span>
+                </button>
+              ) : null}
+
+              {/* No violations — show clean badge alongside result */}
+              {status.tone === "success" &&
+              complianceReport &&
+              complianceReport.violations.length === 0 ? (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    fontSize: 12,
+                    color: "#16a34a",
+                    padding: "4px 0",
+                  }}
+                >
+                  <ShieldCheck size={14} weight="fill" />
+                  <span>No PII or secrets detected in output</span>
+                </div>
+              ) : null}
+
               {error ? (
                 <div>
                   <p
@@ -1438,20 +1715,6 @@ export function Playground() {
                   >
                     {error.message}
                   </pre>
-                  {error.stack ? (
-                    <pre
-                      style={{
-                        margin: "8px 0 0",
-                        fontSize: 11,
-                        fontFamily: "monospace",
-                        color: "#9ca3af",
-                        whiteSpace: "pre-wrap",
-                        wordBreak: "break-word",
-                      }}
-                    >
-                      {error.stack}
-                    </pre>
-                  ) : null}
                 </div>
               ) : null}
 
@@ -1881,6 +2144,12 @@ export function Playground() {
         onClose={() => setTypecheckOpen(false)}
         diagnostics={typeDiagnostics}
         error={typeCheckError}
+      />
+
+      <ComplianceModal
+        open={complianceOpen}
+        onClose={() => setComplianceOpen(false)}
+        report={complianceReport}
       />
     </div>
   );
