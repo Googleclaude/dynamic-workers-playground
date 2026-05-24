@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { isAllowedOriginHeader, validateAuditTs } from "./lgpd";
+import {
+  isAllowedOriginHeader,
+  validateAuditTs,
+  validateRightsRequestBody,
+} from "./lgpd";
+
+const HASH64 = "a".repeat(64);
 
 describe("isAllowedOriginHeader (CSRF guard)", () => {
   it("allows when Origin is absent (non-browser client)", () => {
@@ -86,5 +92,73 @@ describe("validateAuditTs (timestamp forging guard)", () => {
     // Local-time ISO without timezone is ambiguous; require explicit UTC.
     expect(validateAuditTs("2026-05-24T12:00:00", NOW)).toBeNull();
     expect(validateAuditTs("2026-05-24T12:00:00+00:00", NOW)).toBeNull();
+  });
+});
+
+describe("validateRightsRequestBody", () => {
+  const valid = {
+    requestType: "access",
+    nameHash: HASH64,
+    emailHash: HASH64,
+    details: "I'd like a copy of my data",
+    confirmedSubject: true,
+  };
+
+  it("accepts a valid payload and returns the narrowed body", () => {
+    const result = validateRightsRequestBody(valid);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.body.requestType).toBe("access");
+      expect(result.body.nameHash).toBe(HASH64);
+    }
+  });
+
+  it("accepts a valid payload with optional cpfHash", () => {
+    const result = validateRightsRequestBody({ ...valid, cpfHash: HASH64 });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.body.cpfHash).toBe(HASH64);
+  });
+
+  it("rejects unknown requestType", () => {
+    expect(
+      validateRightsRequestBody({ ...valid, requestType: "delete-all" }),
+    ).toEqual({ ok: false, error: "invalid-request-type" });
+  });
+
+  it("rejects malformed nameHash", () => {
+    expect(
+      validateRightsRequestBody({ ...valid, nameHash: "short" }),
+    ).toEqual({ ok: false, error: "invalid-name-hash" });
+  });
+
+  it("rejects malformed emailHash", () => {
+    expect(
+      validateRightsRequestBody({ ...valid, emailHash: "ZZZ" }),
+    ).toEqual({ ok: false, error: "invalid-email-hash" });
+  });
+
+  it("rejects empty details", () => {
+    expect(validateRightsRequestBody({ ...valid, details: "" })).toEqual({
+      ok: false,
+      error: "details-length",
+    });
+  });
+
+  it("rejects details over 2000 chars", () => {
+    expect(
+      validateRightsRequestBody({ ...valid, details: "x".repeat(2001) }),
+    ).toEqual({ ok: false, error: "details-length" });
+  });
+
+  it("rejects confirmedSubject !== true", () => {
+    expect(
+      validateRightsRequestBody({ ...valid, confirmedSubject: false }),
+    ).toEqual({ ok: false, error: "subject-not-confirmed" });
+  });
+
+  it("rejects malformed cpfHash when present", () => {
+    expect(
+      validateRightsRequestBody({ ...valid, cpfHash: "not-hex" }),
+    ).toEqual({ ok: false, error: "invalid-cpf-hash" });
   });
 });

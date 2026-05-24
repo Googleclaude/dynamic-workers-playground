@@ -15,7 +15,11 @@ export class LgpdRateLimit extends DurableObject {
 		const recent = stored.filter((ts) => now - ts < WINDOW_MS);
 
 		if (recent.length >= MAX_REQUESTS) {
-			await this.ctx.storage.put(key, recent);
+			// Only write if pruning expired entries actually shrank the array.
+			// Avoids one DO write per denied request when no expiration happened.
+			if (recent.length !== stored.length) {
+				await this.ctx.storage.put(key, recent);
+			}
 			return { allowed: false, remaining: 0 };
 		}
 
