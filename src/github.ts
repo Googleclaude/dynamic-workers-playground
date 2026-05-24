@@ -9,6 +9,14 @@ const MAX_DEPTH = 10;
 const MAX_FILES = 200;
 const MAX_TOTAL_BYTES = 5 * 1024 * 1024;
 
+const SAFE_SEGMENT = /^[A-Za-z0-9._-]+$/;
+
+function isSafePath(path: string): boolean {
+  if (path === "") return true;
+  if (/[\x00-\x1f]/.test(path)) return false;
+  return path.split("/").every((segment) => segment !== ".." && segment !== "." && SAFE_SEGMENT.test(segment));
+}
+
 function parseGitHubUrl(urlString: string): {
   owner: string;
   repo: string;
@@ -26,7 +34,7 @@ function parseGitHubUrl(urlString: string): {
     const owner = parts[0];
     const repo = parts[1];
 
-    if (!owner || !repo) {
+    if (!owner || !repo || !SAFE_SEGMENT.test(owner) || !SAFE_SEGMENT.test(repo)) {
       return null;
     }
 
@@ -36,6 +44,10 @@ function parseGitHubUrl(urlString: string): {
     if (parts.length > 3 && parts[2] === "tree" && parts[3]) {
       branch = parts[3];
       path = parts.slice(4).join("/");
+    }
+
+    if (!SAFE_SEGMENT.test(branch) || !isSafePath(path)) {
+      return null;
     }
 
     return { owner, repo, branch, path };
