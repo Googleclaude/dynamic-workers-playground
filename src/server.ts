@@ -36,6 +36,19 @@ interface RunRequestBody {
   };
 }
 
+const MAX_RUN_BODY_BYTES = 2 * 1024 * 1024;
+
+function tooLarge(): Response {
+  return Response.json({ error: "Request body too large." }, { status: 413 });
+}
+
+function exceedsLimit(request: Request, limit: number): boolean {
+  const header = request.headers.get("content-length");
+  if (!header) return false;
+  const value = Number.parseInt(header, 10);
+  return Number.isFinite(value) && value > limit;
+}
+
 async function createWorkerId(
   files: Record<string, string>,
   options?: RunRequestBody["options"]
@@ -193,10 +206,12 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === "/api/github" && request.method === "POST") {
+      if (exceedsLimit(request, 16 * 1024)) return tooLarge();
       return handleGitHubImport(request);
     }
 
     if (url.pathname === "/api/run" && request.method === "POST") {
+      if (exceedsLimit(request, MAX_RUN_BODY_BYTES)) return tooLarge();
       try {
         const { files, pathname, options } =
           (await request.json()) as RunRequestBody;
