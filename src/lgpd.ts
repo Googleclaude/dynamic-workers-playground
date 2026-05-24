@@ -31,6 +31,29 @@ const UUID_RE =
 // ISO 8601 date-time: 2026-05-24T00:00:00.000Z (loose, validated by Date constructor)
 const ISO_TS_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
 
+// Validate caller-supplied timestamp: must be ISO 8601 UTC, in the window
+// of [-24h, +5min] relative to `now`. Returns the validated `ts` or null
+// for the caller to fall back to server time.
+export function validateAuditTs(input: unknown, now: number = Date.now()): string | null {
+	if (typeof input !== "string" || !ISO_TS_RE.test(input)) return null;
+	const supplied = new Date(input).getTime();
+	if (Number.isNaN(supplied)) return null;
+	if (supplied > now + 5 * 60_000) return null;
+	if (supplied < now - 24 * 60 * 60_000) return null;
+	return input;
+}
+
+// Reject browser POSTs from other origins. Non-browser clients (no Origin
+// header) are allowed because they're outside the CSRF threat model.
+export function isAllowedOriginHeader(origin: string | null, host: string): boolean {
+	if (!origin) return true;
+	try {
+		return new URL(origin).host === host;
+	} catch {
+		return false;
+	}
+}
+
 interface RightsRequestBody {
 	requestType?: string;
 	nameHash?: string;
@@ -68,17 +91,10 @@ async function checkRateLimit(
 	return allowed;
 }
 
-// Reject browser POSTs from other origins. Non-browser clients (no Origin
-// header) are allowed because they're outside the CSRF threat model.
 function isAllowedOrigin(request: Request): boolean {
 	const origin = request.headers.get("Origin");
-	if (!origin) return true;
 	const host = request.headers.get("Host") ?? "";
-	try {
-		return new URL(origin).host === host;
-	} catch {
-		return false;
-	}
+	return isAllowedOriginHeader(origin, host);
 }
 
 function makeProtocol(): string {
@@ -266,17 +282,7 @@ export async function handleConsentAudit(
 		return Response.json({ error: "invalid-payload" }, { status: 400 });
 	}
 
-	// Validate caller-supplied timestamp: must be ISO 8601 UTC and not in
-	// the future by more than 5 min (clock-skew tolerance) or in the past
-	// by more than 24 h. Fall back to server time on invalid input.
-	let auditTs = new Date().toISOString();
-	if (body.ts && typeof body.ts === "string" && ISO_TS_RE.test(body.ts)) {
-		const supplied = new Date(body.ts).getTime();
-		const now = Date.now();
-		if (!Number.isNaN(supplied) && supplied <= now + 5 * 60_000 && supplied >= now - 24 * 60 * 60_000) {
-			auditTs = body.ts;
-		}
-	}
+	const auditTs = validateAuditTs(body.ts) ?? new Date().toISOString();
 
 	const auditRecord = {
 		id: body.id,
