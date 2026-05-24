@@ -6,7 +6,7 @@ function bytesToBase64Url(bytes: Uint8Array): string {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-function base64UrlToBytes(s: string): Uint8Array {
+function base64UrlToBytes(s: string): Uint8Array<ArrayBuffer> {
   const pad = (4 - (s.length % 4)) % 4;
   const padded = s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat(pad);
   const binary = atob(padded);
@@ -29,10 +29,7 @@ export async function decodeShareHash(hash: string): Promise<ShareFiles | null> 
   if (!match) return null;
   try {
     const bytes = base64UrlToBytes(match[1]);
-    // `.buffer` to avoid TS 5.x ArrayBufferLike narrowing on Uint8Array vs
-    // BodyInit's expected ArrayBufferView<ArrayBuffer>. base64UrlToBytes
-    // allocates a fresh Uint8Array, so the buffer is exactly these bytes.
-    const stream = new Response(bytes.buffer).body!.pipeThrough(
+    const stream = new Response(bytes).body!.pipeThrough(
       new DecompressionStream("gzip")
     );
     const text = await new Response(stream).text();
