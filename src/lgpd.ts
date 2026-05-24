@@ -54,7 +54,7 @@ export function isAllowedOriginHeader(origin: string | null, host: string): bool
 	}
 }
 
-interface RightsRequestBody {
+export interface RightsRequestBody {
 	requestType?: string;
 	nameHash?: string;
 	emailHash?: string;
@@ -62,6 +62,17 @@ interface RightsRequestBody {
 	details?: string;
 	locale?: string;
 	confirmedSubject?: boolean;
+}
+
+export function validateRightsRequestBody(body: RightsRequestBody): string | null {
+	if (!body.requestType || !RIGHTS_REQUEST_TYPES.has(body.requestType)) return "invalid-request-type";
+	if (!body.nameHash || !HEX64_RE.test(body.nameHash)) return "invalid-name-hash";
+	if (!body.emailHash || !HEX64_RE.test(body.emailHash)) return "invalid-email-hash";
+	if (!body.details || typeof body.details !== "string") return "missing-details";
+	if (body.details.length === 0 || body.details.length > 2000) return "details-length";
+	if (body.confirmedSubject !== true) return "subject-not-confirmed";
+	if (body.cpfHash && !HEX64_RE.test(body.cpfHash)) return "invalid-cpf-hash";
+	return null;
 }
 
 interface ConsentAuditBody {
@@ -149,24 +160,9 @@ export async function handleRightsRequest(
 		return Response.json({ error: "invalid-json" }, { status: 400 });
 	}
 
-	if (
-		!body.requestType ||
-		!RIGHTS_REQUEST_TYPES.has(body.requestType) ||
-		!body.nameHash ||
-		!HEX64_RE.test(body.nameHash) ||
-		!body.emailHash ||
-		!HEX64_RE.test(body.emailHash) ||
-		!body.details ||
-		typeof body.details !== "string" ||
-		body.details.length === 0 ||
-		body.details.length > 2000 ||
-		body.confirmedSubject !== true
-	) {
-		return Response.json({ error: "invalid-payload" }, { status: 400 });
-	}
-
-	if (body.cpfHash && !HEX64_RE.test(body.cpfHash)) {
-		return Response.json({ error: "invalid-cpf-hash" }, { status: 400 });
+	const validationError = validateRightsRequestBody(body);
+	if (validationError) {
+		return Response.json({ error: validationError }, { status: 400 });
 	}
 
 	// Re-HMAC the client-supplied subject hashes with the server secret.
