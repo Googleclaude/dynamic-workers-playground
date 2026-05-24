@@ -66,7 +66,9 @@ async function fetchGitHubDirectory(
   let totalBytes = 0;
 
   function relativize(path: string): string {
-    return basePath ? path.replace(`${basePath}/`, "") : path;
+    if (!basePath) return path;
+    const prefix = `${basePath}/`;
+    return path.startsWith(prefix) ? path.slice(prefix.length) : path;
   }
 
   async function addFile(path: string, downloadUrl: string): Promise<void> {
