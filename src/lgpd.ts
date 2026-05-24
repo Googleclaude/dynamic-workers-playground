@@ -64,15 +64,29 @@ export interface RightsRequestBody {
 	confirmedSubject?: boolean;
 }
 
-export function validateRightsRequestBody(body: RightsRequestBody): string | null {
-	if (!body.requestType || !RIGHTS_REQUEST_TYPES.has(body.requestType)) return "invalid-request-type";
-	if (!body.nameHash || !HEX64_RE.test(body.nameHash)) return "invalid-name-hash";
-	if (!body.emailHash || !HEX64_RE.test(body.emailHash)) return "invalid-email-hash";
-	if (!body.details || typeof body.details !== "string") return "missing-details";
-	if (body.details.length === 0 || body.details.length > 2000) return "details-length";
-	if (body.confirmedSubject !== true) return "subject-not-confirmed";
-	if (body.cpfHash && !HEX64_RE.test(body.cpfHash)) return "invalid-cpf-hash";
-	return null;
+export interface ValidatedRightsRequestBody {
+	requestType: string;
+	nameHash: string;
+	emailHash: string;
+	cpfHash?: string;
+	details: string;
+	locale?: string;
+	confirmedSubject: true;
+}
+
+export type ValidationResult =
+	| { ok: true; body: ValidatedRightsRequestBody }
+	| { ok: false; error: string };
+
+export function validateRightsRequestBody(body: RightsRequestBody): ValidationResult {
+	if (!body.requestType || !RIGHTS_REQUEST_TYPES.has(body.requestType)) return { ok: false, error: "invalid-request-type" };
+	if (!body.nameHash || !HEX64_RE.test(body.nameHash)) return { ok: false, error: "invalid-name-hash" };
+	if (!body.emailHash || !HEX64_RE.test(body.emailHash)) return { ok: false, error: "invalid-email-hash" };
+	if (!body.details || typeof body.details !== "string") return { ok: false, error: "missing-details" };
+	if (body.details.length === 0 || body.details.length > 2000) return { ok: false, error: "details-length" };
+	if (body.confirmedSubject !== true) return { ok: false, error: "subject-not-confirmed" };
+	if (body.cpfHash && !HEX64_RE.test(body.cpfHash)) return { ok: false, error: "invalid-cpf-hash" };
+	return { ok: true, body: body as ValidatedRightsRequestBody };
 }
 
 interface ConsentAuditBody {
@@ -160,40 +174,41 @@ export async function handleRightsRequest(
 		return Response.json({ error: "invalid-json" }, { status: 400 });
 	}
 
-	const validationError = validateRightsRequestBody(body);
-	if (validationError) {
-		return Response.json({ error: validationError }, { status: 400 });
+	const validation = validateRightsRequestBody(body);
+	if (!validation.ok) {
+		return Response.json({ error: validation.error }, { status: 400 });
 	}
+	const valid = validation.body;
 
 	// Re-HMAC the client-supplied subject hashes with the server secret.
 	// The client SHA-256 is what we agreed to over the wire; the server HMAC
 	// is what we persist. An attacker who exfiltrates KV cannot rainbow-table
 	// the stored values without also exfiltrating LGPD_HASH_SECRET.
-	const subjectNameHash = await hmacHex(secret, body.nameHash);
-	const subjectEmailHash = await hmacHex(secret, body.emailHash);
-	const subjectCpfHash = body.cpfHash
-		? await hmacHex(secret, body.cpfHash)
+	const subjectNameHash = await hmacHex(secret, valid.nameHash);
+	const subjectEmailHash = await hmacHex(secret, valid.emailHash);
+	const subjectCpfHash = valid.cpfHash
+		? await hmacHex(secret, valid.cpfHash)
 		: undefined;
 
 	const id = crypto.randomUUID();
 	const protocol = makeProtocol();
 	const receivedAt = new Date().toISOString();
 	const integrity = await sha256Hex(
-		`${id}|${body.requestType}|${subjectNameHash}|${subjectEmailHash}|${receivedAt}`,
+		`${id}|${valid.requestType}|${subjectNameHash}|${subjectEmailHash}|${receivedAt}`,
 	);
 
 	const record = {
 		id,
 		protocol,
 		receivedAt,
-		requestType: body.requestType,
-		locale: body.locale ?? "en",
+		requestType: valid.requestType,
+		locale: valid.locale ?? "en",
 		subject: {
 			nameHash: subjectNameHash,
 			emailHash: subjectEmailHash,
 			cpfHash: subjectCpfHash,
 		},
-		details: body.details,
+		details: valid.details,
 		status: "received" as const,
 		integrity,
 		ip_hash: ipHash,
@@ -215,7 +230,7 @@ export async function handleRightsRequest(
 	await kv.put(`request:${id}`, JSON.stringify(record), {
 		metadata: {
 			protocol,
-			requestType: body.requestType,
+			requestType: valid.requestType,
 			receivedAt,
 		},
 	});
@@ -225,7 +240,7 @@ export async function handleRightsRequest(
 		JSON.stringify({
 			event: "lgpd.rights-request.received",
 			protocol,
-			requestType: body.requestType,
+			requestType: valid.requestType,
 			ts: receivedAt,
 			ip_hash: ipHash,
 			ua_hash: uaHash,

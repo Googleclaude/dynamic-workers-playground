@@ -104,53 +104,61 @@ describe("validateRightsRequestBody", () => {
     confirmedSubject: true,
   };
 
-  it("accepts a valid payload", () => {
-    expect(validateRightsRequestBody(valid)).toBeNull();
+  it("accepts a valid payload and returns the narrowed body", () => {
+    const result = validateRightsRequestBody(valid);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.body.requestType).toBe("access");
+      expect(result.body.nameHash).toBe(HASH64);
+    }
   });
 
   it("accepts a valid payload with optional cpfHash", () => {
-    expect(validateRightsRequestBody({ ...valid, cpfHash: HASH64 })).toBeNull();
+    const result = validateRightsRequestBody({ ...valid, cpfHash: HASH64 });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.body.cpfHash).toBe(HASH64);
   });
 
   it("rejects unknown requestType", () => {
     expect(
       validateRightsRequestBody({ ...valid, requestType: "delete-all" }),
-    ).toBe("invalid-request-type");
+    ).toEqual({ ok: false, error: "invalid-request-type" });
   });
 
   it("rejects malformed nameHash", () => {
     expect(
       validateRightsRequestBody({ ...valid, nameHash: "short" }),
-    ).toBe("invalid-name-hash");
+    ).toEqual({ ok: false, error: "invalid-name-hash" });
   });
 
   it("rejects malformed emailHash", () => {
     expect(
       validateRightsRequestBody({ ...valid, emailHash: "ZZZ" }),
-    ).toBe("invalid-email-hash");
+    ).toEqual({ ok: false, error: "invalid-email-hash" });
   });
 
   it("rejects empty details", () => {
-    expect(validateRightsRequestBody({ ...valid, details: "" })).toBe(
-      "details-length",
-    );
+    expect(validateRightsRequestBody({ ...valid, details: "" })).toEqual({
+      ok: false,
+      error: "details-length",
+    });
   });
 
   it("rejects details over 2000 chars", () => {
     expect(
       validateRightsRequestBody({ ...valid, details: "x".repeat(2001) }),
-    ).toBe("details-length");
+    ).toEqual({ ok: false, error: "details-length" });
   });
 
   it("rejects confirmedSubject !== true", () => {
     expect(
       validateRightsRequestBody({ ...valid, confirmedSubject: false }),
-    ).toBe("subject-not-confirmed");
+    ).toEqual({ ok: false, error: "subject-not-confirmed" });
   });
 
   it("rejects malformed cpfHash when present", () => {
     expect(
       validateRightsRequestBody({ ...valid, cpfHash: "not-hex" }),
-    ).toBe("invalid-cpf-hash");
+    ).toEqual({ ok: false, error: "invalid-cpf-hash" });
   });
 });
