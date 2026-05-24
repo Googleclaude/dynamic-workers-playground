@@ -1,4 +1,5 @@
 import type { RightsRequestType } from "./constants";
+import { sha256Hex } from "../../hashing";
 
 export interface RightsRequestPayload {
 	requestType: RightsRequestType;
@@ -13,16 +14,6 @@ export interface RightsRequestPayload {
 export interface RightsRequestResponse {
 	protocol: string;
 	receivedAt: string;
-}
-
-async function sha256Hex(input: string): Promise<string> {
-	const buf = await crypto.subtle.digest(
-		"SHA-256",
-		new TextEncoder().encode(input),
-	);
-	return Array.from(new Uint8Array(buf), (b) =>
-		b.toString(16).padStart(2, "0"),
-	).join("");
 }
 
 function digitsOnly(s: string): string {
