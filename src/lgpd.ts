@@ -31,6 +31,13 @@ const UUID_RE =
 // ISO 8601 date-time: 2026-05-24T00:00:00.000Z (loose, validated by Date constructor)
 const ISO_TS_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
 
+// L-03 audit fix — KV retention policy. See docs/lgpd-retention.md.
+// Rights requests: 5 years (LGPD art. 16 II — comprovação de cumprimento
+// de obrigação legal + típico prazo de prescrição cível). Consent audit:
+// 180 days (operational — superseded when subject renews/revokes consent).
+const RIGHTS_TTL_SECONDS = 5 * 365 * 24 * 60 * 60;
+const AUDIT_TTL_SECONDS = 180 * 24 * 60 * 60;
+
 // Validate caller-supplied timestamp: must be ISO 8601 UTC, in the window
 // of [-24h, +5min] relative to `now`. Returns the validated `ts` or null
 // for the caller to fall back to server time.
@@ -228,13 +235,16 @@ export async function handleRightsRequest(
 	}
 
 	await kv.put(`request:${id}`, JSON.stringify(record), {
+		expirationTtl: RIGHTS_TTL_SECONDS,
 		metadata: {
 			protocol,
 			requestType: valid.requestType,
 			receivedAt,
 		},
 	});
-	await kv.put(`protocol:${protocol}`, id);
+	await kv.put(`protocol:${protocol}`, id, {
+		expirationTtl: RIGHTS_TTL_SECONDS,
+	});
 
 	console.log(
 		JSON.stringify({
@@ -307,10 +317,9 @@ export async function handleConsentAudit(
 
 	const kv = env.LGPD_KV as KVNamespace | undefined;
 	if (kv) {
-		await kv.put(
-			`consent-audit:${body.id}`,
-			JSON.stringify(auditRecord),
-		);
+		await kv.put(`consent-audit:${body.id}`, JSON.stringify(auditRecord), {
+			expirationTtl: AUDIT_TTL_SECONDS,
+		});
 	}
 
 	console.log(
