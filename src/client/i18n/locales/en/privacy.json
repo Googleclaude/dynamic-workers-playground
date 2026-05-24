@@ -33,7 +33,7 @@
 				"Language preference stored in your browser's localStorage under the key \"i18nextLng\" when functional consent is granted.",
 				"Consent record stored in your browser's localStorage under the key \"lgpd-consent\" — used to remember your privacy choices and avoid repeated prompts.",
 				"Network metadata (IP address and User-Agent) processed in transit by Cloudflare for security and observability. We never store the raw IP or User-Agent; only short SHA-256 prefixes are written to audit logs.",
-				"Information you voluntarily submit to the data subject rights form: full name, email, optional CPF and request details. Identifiers (name, email, CPF) are hashed with SHA-256 before storage; only the request type and free-text details are stored in clear text."
+				"Information you voluntarily submit to the data subject rights form: full name, email, optional CPF and request details. Identifiers (name, email, CPF) are first hashed with SHA-256 on your device and then re-hashed with HMAC-SHA256 keyed by a server-side secret (LGPD_HASH_SECRET) before storage. An attacker who exfiltrates our key-value store cannot rainbow-table the stored hashes without also exfiltrating the secret. Only the request type and free-text details are stored in clear text."
 			]
 		},
 		"legal-basis": {
@@ -101,7 +101,7 @@
 			"title": "10. Security Measures",
 			"body": [
 				"All traffic is served over TLS.",
-				"Personal identifiers in rights requests are hashed with SHA-256 before storage; raw IP addresses and User-Agents are never stored.",
+				"Personal identifiers in rights requests are double-hashed (client-side SHA-256, then server-side HMAC-SHA256 with a rotatable secret) before storage; raw IP addresses and User-Agents are never stored.",
 				"Workers runtime isolation prevents code submitted by you from accessing other users' state. Each submission is loaded into an isolated Durable Object via the Worker Loader binding.",
 				"Operators are encouraged to deploy this playground behind Cloudflare Access in production to limit exposure of arbitrary code execution to authorized users only.",
 				"Access to administrative interfaces is restricted to authorized personnel."

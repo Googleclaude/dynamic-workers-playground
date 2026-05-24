@@ -33,7 +33,7 @@
 				"Preferência de idioma armazenada no localStorage sob a chave \"i18nextLng\" quando o consentimento funcional é concedido.",
 				"Registro de consentimento armazenado no localStorage sob a chave \"lgpd-consent\" — usado para lembrar suas escolhas e evitar perguntas repetidas.",
 				"Metadados de rede (endereço IP e User-Agent) tratados em trânsito pela Cloudflare para fins de segurança e observabilidade. Nunca armazenamos o IP ou User-Agent em texto claro; apenas prefixos curtos de SHA-256 são gravados em logs de auditoria.",
-				"Informações que você envia voluntariamente no formulário de direitos do titular: nome completo, e-mail, CPF (opcional) e detalhes da solicitação. Identificadores (nome, e-mail, CPF) são hashed com SHA-256 antes do armazenamento; apenas o tipo da solicitação e o texto livre são armazenados em texto claro."
+				"Informações que você envia voluntariamente no formulário de direitos do titular: nome completo, e-mail, CPF (opcional) e detalhes da solicitação. Identificadores (nome, e-mail, CPF) são primeiro hashed com SHA-256 no seu dispositivo e em seguida re-hashed com HMAC-SHA256 chaveado por um segredo do servidor (LGPD_HASH_SECRET) antes do armazenamento. Um atacante que vaze nosso armazenamento chave-valor não consegue reverter os hashes via rainbow table sem também vazar o segredo. Apenas o tipo da solicitação e o texto livre são armazenados em texto claro."
 			]
 		},
 		"legal-basis": {
@@ -101,7 +101,7 @@
 			"title": "10. Medidas de Segurança",
 			"body": [
 				"Todo o tráfego é servido sobre TLS.",
-				"Identificadores pessoais em solicitações de direitos são hashed com SHA-256 antes do armazenamento; endereços IP e User-Agents brutos nunca são armazenados.",
+				"Identificadores pessoais em solicitações de direitos são duplamente hashed (SHA-256 no cliente, depois HMAC-SHA256 no servidor com segredo rotacionável) antes do armazenamento; endereços IP e User-Agents brutos nunca são armazenados.",
 				"O isolamento do runtime Workers impede que código submetido por você acesse o estado de outros usuários. Cada submissão é carregada em um Durable Object isolado por meio do binding do Worker Loader.",
 				"Operadores são incentivados a implantar este playground atrás do Cloudflare Access em produção, limitando a execução de código arbitrário a usuários autorizados.",
 				"O acesso a interfaces administrativas é restrito a pessoal autorizado."
