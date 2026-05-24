@@ -18,7 +18,11 @@ jobs:
       # when @typescript/vfs, typescript, and vitest were added without
       # regenerating the lockfile. Switch back to `npm ci` once the lockfile
       # is regenerated in a follow-up.
-      - run: npm install --no-audit --no-fund
-      - run: npm run types
-      - run: npx tsc --noEmit
-      - run: npm test
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Generate env.d.ts from wrangler.jsonc
+        run: npm run types
+      - name: TypeScript type-check
+        run: npx tsc --noEmit
+      - name: Run vitest suite
+        run: npm test
