@@ -370,13 +370,6 @@ function getContentType(headers: Record<string, string>) {
   return match?.[1] ?? "text/plain";
 }
 
-function statusClassName(status: StatusTone) {
-  if (status === "success") return "success";
-  if (status === "error") return "error";
-  if (status === "running") return "loading";
-  return "idle";
-}
-
 function consolePrefix(level: string) {
   if (level === "error") return "✕";
   if (level === "warn") return "!";
