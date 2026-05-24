@@ -18,6 +18,43 @@ const MAX_FILE_COUNT = 50;
 // Maximum size of a single source file (1 MB).
 const MAX_FILE_BYTES = 1 * 1024 * 1024;
 
+// Read the request body via a streaming reader, rejecting if the cumulative
+// byte count exceeds `maxBytes`. This is the only safe way to enforce a body
+// limit on Cloudflare Workers: trusting `Content-Length` lets a client bypass
+// the check by using `Transfer-Encoding: chunked` (S-01 in the 2026-05-24
+// audit). Returns null if the limit was exceeded.
+export async function readBodyWithLimit(
+  request: Request,
+  maxBytes: number
+): Promise<ArrayBuffer | null> {
+  if (!request.body) return new ArrayBuffer(0);
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel();
+        return null;
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock?.();
+  }
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) {
+    merged.set(c, offset);
+    offset += c.byteLength;
+  }
+  return merged.buffer;
+}
+
 // Security headers added to every API response.
 const SECURITY_HEADERS: Record<string, string> = {
   "X-Content-Type-Options": "nosniff",
@@ -298,16 +335,25 @@ export default {
 
     if (url.pathname === "/api/run" && request.method === "POST") {
       try {
-        // Enforce body size limit before parsing.
-        const contentLength = Number(request.headers.get("content-length") ?? 0);
-        if (contentLength > MAX_RUN_BODY_BYTES) {
+        // Enforce body size limit via streaming reader (S-01 audit fix).
+        // Do NOT rely on the Content-Length header: chunked transfer encoding
+        // omits it, so a header-only check is bypassable.
+        const bodyBuf = await readBodyWithLimit(request, MAX_RUN_BODY_BYTES);
+        if (bodyBuf === null) {
           return withSecurityHeaders(
             Response.json({ error: "Request body too large." }, { status: 413 })
           );
         }
-
-        const { files, pathname, options } =
-          (await request.json()) as RunRequestBody;
+        const bodyText = new TextDecoder().decode(bodyBuf);
+        let parsed: RunRequestBody;
+        try {
+          parsed = JSON.parse(bodyText) as RunRequestBody;
+        } catch {
+          return withSecurityHeaders(
+            Response.json({ error: "Invalid JSON body." }, { status: 400 })
+          );
+        }
+        const { files, pathname, options } = parsed;
 
         if (!files || typeof files !== "object" || Array.isArray(files)) {
           return withSecurityHeaders(
