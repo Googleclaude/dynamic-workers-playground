@@ -5,6 +5,15 @@ on:
   push:
     branches: [main]
 
+# Least-privilege: workflow only reads code, doesn't comment/push/release.
+permissions:
+  contents: read
+
+# Cancel in-flight runs for the same ref when a new commit lands.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   ci:
     runs-on: ubuntu-latest
