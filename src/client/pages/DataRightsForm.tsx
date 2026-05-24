@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "../i18n";
 import { Link } from "../router";
-import { RIGHTS_REQUEST_TYPES } from "../lgpd/constants";
+import { RIGHTS_REQUEST_TYPES, hasValidControllerInfo } from "../lgpd/constants";
 import type { RightsRequestType } from "../lgpd/constants";
 import { submitRightsRequest } from "../lgpd/api";
 import type { RightsRequestResponse } from "../lgpd/api";
@@ -12,6 +12,42 @@ const MAX_DETAILS = 2000;
 export default function DataRightsForm() {
 	const { t, lang } = useTranslation("rights");
 	const { t: tc } = useTranslation();
+
+	// L-05 audit fix: refuse to render if CONTROLLER_INFO/DPO_INFO weren't
+	// filled in. Submitting a rights request to a non-functional channel is
+	// worse than not exposing the form at all (LGPD art. 18 §1º requires a
+	// meaningful response).
+	if (!hasValidControllerInfo()) {
+		return (
+			<div
+				style={{
+					maxWidth: 720,
+					margin: "40px auto",
+					padding: 24,
+					border: "1px solid rgba(220, 38, 38, 0.35)",
+					background: "rgba(220, 38, 38, 0.06)",
+					borderRadius: 12,
+				}}
+			>
+				<h1 style={{ margin: "0 0 12px", fontSize: 18, color: "#b91c1c" }}>
+					LGPD rights form unavailable
+				</h1>
+				<p style={{ margin: 0, fontSize: 14, color: "#7f1d1d" }}>
+					This deployment hasn’t configured the data controller / DPO
+					contact information yet. Edit{" "}
+					<code style={{ fontFamily: "monospace" }}>
+						src/client/lgpd/constants.ts
+					</code>{" "}
+					replacing the bracketed placeholders before exposing this form.
+					Accepting requests through a non-functional channel would violate
+					LGPD art. 18 §1º.
+				</p>
+				<p style={{ marginTop: 16, fontSize: 13 }}>
+					<Link to="/">← back home</Link>
+				</p>
+			</div>
+		);
+	}
 
 	const [requestType, setRequestType] = useState<RightsRequestType>("access");
 	const [name, setName] = useState("");

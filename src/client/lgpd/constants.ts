@@ -16,6 +16,26 @@ export const DPO_INFO = {
 	address: "[Endereço Postal do DPO]",
 };
 
+// L-05 audit fix: detect unfilled placeholders so the rights UI can refuse
+// to render. Shipping a public deployment with bracketed placeholders gives
+// users a non-functional channel — worse than not exposing the UI at all,
+// since LGPD art. 18 §1º requires a meaningful response channel.
+function looksLikePlaceholder(value: string): boolean {
+	return /^\s*\[.*\]\s*$/.test(value) || /example\.com$/.test(value);
+}
+
+export function hasValidControllerInfo(): boolean {
+	return (
+		!looksLikePlaceholder(CONTROLLER_INFO.legalName) &&
+		!looksLikePlaceholder(CONTROLLER_INFO.cnpj) &&
+		!looksLikePlaceholder(CONTROLLER_INFO.address) &&
+		!looksLikePlaceholder(CONTROLLER_INFO.email) &&
+		!looksLikePlaceholder(DPO_INFO.name) &&
+		!looksLikePlaceholder(DPO_INFO.email) &&
+		!looksLikePlaceholder(DPO_INFO.address)
+	);
+}
+
 export const POLICY_LAST_UPDATED = "2026-05-07";
 
 export const SUPPORTED_LANGUAGES = ["en", "pt-BR"] as const;
