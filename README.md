@@ -75,6 +75,17 @@ src/
   styles.css   Tailwind + Kumo styles
 ```
 
+## Privacy
+
+This playground does not collect, store, or process personal data. The only
+inputs are public GitHub URLs and user-authored source files, both of which
+are used solely to bundle and execute a dynamic Worker. Logs from the dynamic
+Worker are held ephemerally in a `LogSession` Durable Object and streamed back
+to the same caller.
+
+If you deploy your own instance, the Worker runs on Cloudflare's global edge.
+See `SECURITY.md` for the hardening assumptions and how to report issues.
+
 ## Related examples
 
 - [cloudflare/agents — playground](https://github.com/cloudflare/agents/tree/main/examples/playground) — full Agents SDK kitchen-sink demo (also uses `worker_loaders`)
