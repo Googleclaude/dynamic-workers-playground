@@ -1,5 +1,5 @@
-import { Trans, useTranslation } from "react-i18next";
-import { Link } from "react-router-dom";
+import { Trans, useTranslation } from "../i18n";
+import { Link } from "../router";
 import {
 	CONTROLLER_INFO,
 	DPO_INFO,
@@ -30,21 +30,21 @@ interface SectionContent {
 }
 
 function readSection(
-	t: (key: string, options?: Record<string, unknown>) => unknown,
+	t: (key: string, opts?: Record<string, unknown>) => string,
 	id: SectionId,
 	values: Record<string, string>,
 ): SectionContent {
-	const title = t(`sections.${id}.title`, values) as string;
+	const title = t(`sections.${id}.title`, values);
 	const body = t(`sections.${id}.body`, {
 		...values,
 		returnObjects: true,
 		defaultValue: undefined,
-	}) as string[] | undefined;
+	}) as unknown as string[] | undefined;
 	const items = t(`sections.${id}.items`, {
 		...values,
 		returnObjects: true,
 		defaultValue: undefined,
-	}) as string[] | undefined;
+	}) as unknown as string[] | undefined;
 	return {
 		title,
 		body: Array.isArray(body) ? body : undefined,
@@ -110,14 +110,12 @@ export default function PrivacyPolicy() {
 			</nav>
 
 			{SECTION_IDS.map((id) => {
-				const section = readSection(t as never, id, {
+				const section = readSection(t, id, {
 					...values,
 					email:
 						id === "dpo"
 							? DPO_INFO.email
-							: id === "controller"
-								? CONTROLLER_INFO.email
-								: CONTROLLER_INFO.email,
+							: CONTROLLER_INFO.email,
 					address: id === "dpo" ? DPO_INFO.address : CONTROLLER_INFO.address,
 				});
 				return (

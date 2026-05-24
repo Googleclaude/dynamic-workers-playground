@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { Trans, useTranslation } from "react-i18next";
-import { Link } from "react-router-dom";
+import { Trans, useTranslation } from "../i18n";
+import { Link } from "../router";
 import { useConsent } from "./ConsentContext";
 
 export default function ConsentBanner() {
