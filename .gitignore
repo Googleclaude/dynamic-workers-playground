@@ -4,3 +4,16 @@ node_modules/
 dist/
 worker-configuration.d.ts
 .claude/settings.local.json
+
+# Secrets — never commit credentials to the repository
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+credentials*.json
+*secret*
+*_secret
