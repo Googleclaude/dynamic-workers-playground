@@ -5,6 +5,10 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   ci:
     runs-on: ubuntu-latest
@@ -14,18 +18,54 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      # npm install (not ci) because package-lock.json drifted from package.json
-      # when @typescript/vfs, typescript, and vitest were added without
-      # regenerating the lockfile. Tracked in issue #26.
-      - name: Install dependencies
-        run: npm install --no-audit --no-fund
-      - name: Generate env.d.ts from wrangler.jsonc
-        run: npm run types
-      - name: TypeScript type-check
-        run: npx tsc --noEmit
-      # vitest currently fails with a vite/rolldown plugin binding mismatch
-      # ("Missing field `tsconfigPaths`"). Non-fatal until tracked-fixed so
-      # the rest of CI still gates type-correctness.
-      - name: Run vitest suite (non-blocking)
-        continue-on-error: true
-        run: npm test
+      - name: Diagnostic — capture each step output
+        id: diag
+        run: |
+          set +e
+          {
+            echo "## CI Diagnostic for ${GITHUB_SHA:0:7}"
+            echo
+            echo "### npm install --no-audit --no-fund"
+            echo '```'
+            npm install --no-audit --no-fund 2>&1 | tail -30
+            rc_install=${PIPESTATUS[0]}
+            echo '```'
+            echo "exit=$rc_install"
+            echo
+            echo "### npm run types"
+            echo '```'
+            npm run types 2>&1 | tail -30
+            rc_types=${PIPESTATUS[0]}
+            echo '```'
+            echo "exit=$rc_types"
+            echo
+            echo "### npx tsc --noEmit"
+            echo '```'
+            npx tsc --noEmit 2>&1 | tail -80
+            rc_tsc=${PIPESTATUS[0]}
+            echo '```'
+            echo "exit=$rc_tsc"
+            echo
+            echo "### npm test"
+            echo '```'
+            npm test 2>&1 | tail -40
+            rc_test=${PIPESTATUS[0]}
+            echo '```'
+            echo "exit=$rc_test (continue-on-error)"
+            total=$((rc_install + rc_types + rc_tsc))
+            echo "DIAG_EXIT=$total" >> "$GITHUB_OUTPUT"
+          } > /tmp/diag.md
+          cat /tmp/diag.md
+          exit 0
+      - name: Post diagnostic comment on PR
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: gh pr comment "$PR" --body-file /tmp/diag.md --repo "$GITHUB_REPOSITORY"
+      - name: Fail if any blocking step had non-zero exit
+        run: |
+          if [ "${{ steps.diag.outputs.DIAG_EXIT }}" != "0" ]; then
+            echo "A blocking step (install/types/tsc) failed (see PR comment)."
+            exit 1
+          fi
