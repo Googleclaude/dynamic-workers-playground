@@ -71,13 +71,20 @@ async function fetchGitHubDirectory(
       ? `https://api.github.com/repos/${owner}/${repo}/contents/${dirPath}?ref=${branch}`
       : `https://api.github.com/repos/${owner}/${repo}/contents?ref=${branch}`;
 
+    // redirect: "manual" prevents the allowlist from being bypassed if
+    // github.com / api.github.com ever returns a 3xx pointing elsewhere
+    // (S-02 audit fix). Same for download_url fetches below.
     const response = await fetch(apiUrl, {
       headers: {
         Accept: "application/vnd.github.v3+json",
         "User-Agent": "dynamic-workers-playground"
-      }
+      },
+      redirect: "manual"
     });
 
+    if (response.status >= 300 && response.status < 400) {
+      throw new Error(`GitHub API redirected unexpectedly (${response.status}); refusing to follow.`);
+    }
     if (!response.ok) {
       if (response.status === 404) {
         throw new Error(`Repository or path not found: ${owner}/${repo}/${dirPath || "(root)"}`);
@@ -89,7 +96,7 @@ async function fetchGitHubDirectory(
 
     if (!Array.isArray(contents)) {
       if (contents.type === "file" && isSafeDownloadUrl(contents.download_url)) {
-        const fileResponse = await fetch(contents.download_url!);
+        const fileResponse = await fetch(contents.download_url!, { redirect: "manual" });
         if (fileResponse.ok) {
           const content = await fileResponse.text();
           const relativePath = basePath ? contents.path.replace(`${basePath}/`, "") : contents.path;
@@ -102,7 +109,7 @@ async function fetchGitHubDirectory(
     await Promise.all(
       contents.map(async (item) => {
         if (item.type === "file" && isSafeDownloadUrl(item.download_url)) {
-          const fileResponse = await fetch(item.download_url!);
+          const fileResponse = await fetch(item.download_url!, { redirect: "manual" });
           if (fileResponse.ok) {
             const content = await fileResponse.text();
             const relativePath = basePath ? item.path.replace(`${basePath}/`, "") : item.path;
