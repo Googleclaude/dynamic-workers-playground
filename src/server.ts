@@ -28,7 +28,6 @@ interface WorkerState {
 
 interface RunRequestBody {
   files: Record<string, string>;
-  version: number;
   pathname?: string;
   options?: {
     bundle?: boolean;

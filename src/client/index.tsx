@@ -339,10 +339,6 @@ export function handleUsers(request: Request): Response {
   },
 ];
 
-function snapshotFiles(files: PlaygroundFiles) {
-  return JSON.stringify(files);
-}
-
 function inferPrimaryFile(files: PlaygroundFiles) {
   return (
     Object.keys(files).find(
@@ -462,8 +458,6 @@ export function App() {
     tone: "idle",
     label: "Ready",
   });
-  const [workerVersion, setWorkerVersion] = useState(0);
-  const [lastSnapshot, setLastSnapshot] = useState<string | null>(null);
   const [result, setResult] = useState<RunResult | null>(null);
   const [error, setError] = useState<{
     message: string;
@@ -624,21 +618,11 @@ export function App() {
     setStatus({ tone: "running", label: "Bundling..." });
 
     try {
-      const nextSnapshot = snapshotFiles(files);
-      const nextVersion =
-        nextSnapshot === lastSnapshot ? workerVersion : workerVersion + 1;
-
-      if (nextVersion !== workerVersion) {
-        setWorkerVersion(nextVersion);
-        setLastSnapshot(nextSnapshot);
-      }
-
       const response = await fetch("/api/run", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           files,
-          version: nextVersion,
           options: { bundle, minify },
         }),
       });
