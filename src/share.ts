@@ -29,7 +29,10 @@ export async function decodeShareHash(hash: string): Promise<ShareFiles | null> 
   if (!match) return null;
   try {
     const bytes = base64UrlToBytes(match[1]);
-    const stream = new Response(bytes).body!.pipeThrough(
+    // `.buffer` to avoid TS 5.x ArrayBufferLike narrowing on Uint8Array vs
+    // BodyInit's expected ArrayBufferView<ArrayBuffer>. base64UrlToBytes
+    // allocates a fresh Uint8Array, so the buffer is exactly these bytes.
+    const stream = new Response(bytes.buffer).body!.pipeThrough(
       new DecompressionStream("gzip")
     );
     const text = await new Response(stream).text();

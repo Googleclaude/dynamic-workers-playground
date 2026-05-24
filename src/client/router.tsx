@@ -33,7 +33,9 @@ export function Link({
 	className,
 }: {
 	to: string;
-	children: ReactNode;
+	// Optional because Trans-style i18n usage passes empty <Link to="..." />
+	// elements as placeholders and injects children at runtime via cloneElement.
+	children?: ReactNode;
 	className?: string;
 }) {
 	const { navigate } = useContext(Ctx);
