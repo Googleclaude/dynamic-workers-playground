@@ -9,6 +9,9 @@
     "deploy": "npm run check:lgpd && vite build && wrangler deploy",
     "test": "vitest run",
     "types": "wrangler types env.d.ts --include-runtime false",
+    "typecheck": "tsc --noEmit",
+    "lint": "npx --yes @biomejs/biome@1.9.4 check .",
+    "format": "npx --yes @biomejs/biome@1.9.4 format --write .",
     "check:lgpd": "node scripts/check-lgpd-constants.mjs"
   },
   "dependencies": {
