@@ -42,6 +42,16 @@ To deploy:
 npm run deploy
 ```
 
+If you intend to enable the LGPD compliance endpoints (`/api/lgpd/*`),
+run the setup script first — it provisions the KV namespace, prompts
+for `LGPD_HASH_SECRET`, and warns about remaining placeholders:
+
+```bash
+bash scripts/setup-lgpd.sh
+```
+
+The script is idempotent and refuses to clobber existing resources.
+
 ## How it works
 
 When you click **Run Worker**, the host Worker receives your source files and calls `createWorker()` from `@cloudflare/worker-bundler` to bundle them at runtime:

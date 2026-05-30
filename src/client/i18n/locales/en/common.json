@@ -1,0 +1,32 @@
+{
+	"app": {
+		"title": "Dynamic Workers Playground",
+		"backToPlayground": "Back to playground"
+	},
+	"nav": {
+		"home": "Playground",
+		"privacy": "Privacy Policy",
+		"dataRights": "Data Subject Rights",
+		"manageConsent": "Manage Consent"
+	},
+	"footer": {
+		"label": "Privacy and data protection",
+		"privacy": "Privacy",
+		"dataRights": "Your rights",
+		"manageConsent": "Manage consent",
+		"language": "Language"
+	},
+	"language": {
+		"label": "Language",
+		"en": "English",
+		"pt-BR": "Português (Brasil)"
+	},
+	"common": {
+		"back": "Back to playground",
+		"submit": "Submit",
+		"cancel": "Cancel",
+		"save": "Save",
+		"required": "Required field",
+		"loading": "Loading…"
+	}
+}

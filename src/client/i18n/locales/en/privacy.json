@@ -1,0 +1,126 @@
+{
+	"title": "Privacy Policy",
+	"intro": "This policy explains how the Dynamic Workers Playground processes personal data in compliance with Brazil's Lei Geral de Proteção de Dados (LGPD, Law 13.709/2018). It is available in both English and Portuguese; the Portuguese version prevails for Brazilian data subjects.",
+	"lastUpdated": "Last updated: {{date}}",
+	"toc": "Contents",
+	"sections": {
+		"controller": {
+			"title": "1. Data Controller",
+			"body": [
+				"The controller responsible for processing personal data through this application is identified below.",
+				"Legal name: {{legalName}}",
+				"CNPJ: {{cnpj}}",
+				"Address: {{address}}",
+				"General contact: {{email}}"
+			]
+		},
+		"dpo": {
+			"title": "2. Data Protection Officer (Encarregado)",
+			"body": [
+				"As required by LGPD Article 41, the controller has appointed a Data Protection Officer responsible for receiving communications from data subjects and the National Data Protection Authority (ANPD).",
+				"Name: {{name}}",
+				"Email: {{email}}",
+				"Address: {{address}}"
+			]
+		},
+		"data-collected": {
+			"title": "3. Personal Data Collected and Purposes",
+			"body": [
+				"This is a code playground designed to bundle and execute Cloudflare Worker code submitted by users. The personal data potentially processed is limited to the items below.",
+				"Worker source code you submit through the editor or import from a public GitHub repository — processed in memory to bundle and execute your Worker. Output and console logs are returned to you and not persisted to durable storage.",
+				"GitHub repository URLs you submit for import — used to fetch the public files via the unauthenticated GitHub API.",
+				"Theme preference (light/dark) stored in your browser's localStorage under the key \"theme\" when functional consent is granted.",
+				"Language preference stored in your browser's localStorage under the key \"i18nextLng\" when functional consent is granted.",
+				"Consent record stored in your browser's localStorage under the key \"lgpd-consent\" — used to remember your privacy choices and avoid repeated prompts.",
+				"Network metadata (IP address and User-Agent) processed in transit by Cloudflare for security and observability. We never store the raw IP or User-Agent; only short SHA-256 prefixes are written to audit logs.",
+				"Information you voluntarily submit to the data subject rights form: full name, email, optional CPF and request details. Identifiers (name, email, CPF) are hashed with SHA-256 before storage; only the request type and free-text details are stored in clear text."
+			]
+		},
+		"legal-basis": {
+			"title": "4. Legal Bases for Processing (LGPD Art. 7)",
+			"items": [
+				"Consent (Art. 7, I) — for functional storage and persisted preferences.",
+				"Compliance with a legal or regulatory obligation (Art. 7, II) — for retention of data subject rights requests.",
+				"Legitimate interest of the controller (Art. 7, IX) — for short-lived security audit logs (hashed IP/UA), rate limiting and protection against abuse.",
+				"Execution of a contract (Art. 7, V) — for fulfilling /api/run and /api/github requests you initiate."
+			]
+		},
+		"sharing": {
+			"title": "5. Data Sharing",
+			"body": [
+				"We share personal data only with the following operators, strictly to provide the service.",
+				"Cloudflare, Inc. — infrastructure provider (Workers runtime, Durable Objects, Worker Loaders, KV storage, edge network). Acts as data processor under our control.",
+				"GitHub, Inc. — only when you explicitly submit a GitHub URL for import. The unauthenticated GitHub API is contacted server-side; we do not transmit your IP or identifiers to GitHub."
+			]
+		},
+		"international-transfer": {
+			"title": "6. International Data Transfer",
+			"body": [
+				"Cloudflare and GitHub operate global networks and may process data outside Brazil, including in the United States and the European Union.",
+				"International transfers are made under contractual safeguards as permitted by LGPD Art. 33, including contractual clauses requiring a level of protection at least equivalent to the LGPD."
+			]
+		},
+		"retention": {
+			"title": "7. Data Retention",
+			"body": [
+				"Worker source code submitted to /api/run: not persisted; bundled and executed in memory; cached only by content hash inside the Worker Loader for the duration of the request session.",
+				"Console logs from your executed Worker: streamed to you in real time and not persisted beyond the session.",
+				"Consent record: retained until you revoke it via the Manage Consent page.",
+				"Theme and language preferences: retained until you revoke functional consent or clear browser storage.",
+				"Audit logs (hashed IP/UA): retained for up to 6 months for security purposes.",
+				"Rights request records: retained for 5 years after the request is fulfilled, to demonstrate compliance with LGPD obligations."
+			]
+		},
+		"subject-rights": {
+			"title": "8. Rights of the Data Subject (LGPD Art. 18)",
+			"body": [
+				"You may, at any time and free of charge, request from the controller:",
+				"confirmation of the existence of processing;",
+				"access to your data;",
+				"correction of incomplete, inaccurate or outdated data;",
+				"anonymization, blocking or deletion of unnecessary or excessive data, or data processed in non-compliance with the LGPD;",
+				"portability of the data to another service or product provider;",
+				"deletion of personal data processed with your consent;",
+				"information about the public and private entities with which we share your data;",
+				"information about the possibility of refusing consent and the consequences of refusal;",
+				"revocation of consent.",
+				"Submit any of these requests through our <1>Data Subject Rights form</1>."
+			]
+		},
+		"cookies": {
+			"title": "9. Cookies and Browser Storage",
+			"body": [
+				"This application does not set HTTP cookies. We use only browser localStorage and only with the following keys:",
+				"\"lgpd-consent\" (necessary) — stores your consent choices.",
+				"\"theme\" (functional) — stores your light/dark mode preference.",
+				"\"i18nextLng\" (functional) — stores your language preference.",
+				"You can clear these at any time from your browser settings or via the Manage Consent page."
+			]
+		},
+		"security": {
+			"title": "10. Security Measures",
+			"body": [
+				"All traffic is served over TLS.",
+				"Personal identifiers in rights requests are hashed with SHA-256 before storage; raw IP addresses and User-Agents are never stored.",
+				"Workers runtime isolation prevents code submitted by you from accessing other users' state. Each submission is loaded into an isolated Durable Object via the Worker Loader binding.",
+				"Operators are encouraged to deploy this playground behind Cloudflare Access in production to limit exposure of arbitrary code execution to authorized users only.",
+				"Access to administrative interfaces is restricted to authorized personnel."
+			]
+		},
+		"updates": {
+			"title": "11. Policy Updates",
+			"body": [
+				"We may update this policy from time to time. Material changes that affect your consent will trigger the consent banner to reappear so you can review and accept or reject the new terms.",
+				"Current version: 1.0.0. Last revision: {{date}}."
+			]
+		},
+		"contact": {
+			"title": "12. How to Exercise Your Rights",
+			"body": [
+				"Use our <1>Data Subject Rights form</1> to submit any request listed above.",
+				"You may also contact the Data Protection Officer directly at {{dpoEmail}}.",
+				"You have the right to file a complaint with the ANPD (National Data Protection Authority) if you believe your rights have been infringed."
+			]
+		}
+	}
+}

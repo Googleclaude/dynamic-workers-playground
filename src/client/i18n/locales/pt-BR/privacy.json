@@ -1,0 +1,126 @@
+{
+	"title": "Política de Privacidade",
+	"intro": "Esta política descreve como o Playground de Workers Dinâmicos trata dados pessoais em conformidade com a Lei Geral de Proteção de Dados (LGPD, Lei nº 13.709/2018). Está disponível em português e inglês; a versão em português prevalece para titulares de dados no Brasil.",
+	"lastUpdated": "Última atualização: {{date}}",
+	"toc": "Conteúdo",
+	"sections": {
+		"controller": {
+			"title": "1. Controlador dos Dados",
+			"body": [
+				"O controlador responsável pelo tratamento de dados pessoais por meio desta aplicação está identificado abaixo.",
+				"Razão social: {{legalName}}",
+				"CNPJ: {{cnpj}}",
+				"Endereço: {{address}}",
+				"Contato geral: {{email}}"
+			]
+		},
+		"dpo": {
+			"title": "2. Encarregado pelo Tratamento de Dados (DPO)",
+			"body": [
+				"Conforme exige o Art. 41 da LGPD, o controlador nomeou um Encarregado pelo Tratamento de Dados, responsável por receber comunicações dos titulares e da Autoridade Nacional de Proteção de Dados (ANPD).",
+				"Nome: {{name}}",
+				"E-mail: {{email}}",
+				"Endereço: {{address}}"
+			]
+		},
+		"data-collected": {
+			"title": "3. Dados Pessoais Coletados e Finalidades",
+			"body": [
+				"Este é um playground de código projetado para empacotar e executar código de Cloudflare Worker submetido pelos usuários. Os dados pessoais potencialmente tratados se limitam aos itens abaixo.",
+				"Código-fonte de Worker submetido pelo editor ou importado de repositório público do GitHub — processado em memória para empacotar e executar seu Worker. A saída e os logs de console retornam para você e não são persistidos em armazenamento durável.",
+				"URLs de repositórios do GitHub submetidas para importação — usadas para buscar arquivos públicos pela API não autenticada do GitHub.",
+				"Preferência de tema (claro/escuro) armazenada no localStorage do navegador sob a chave \"theme\" quando o consentimento funcional é concedido.",
+				"Preferência de idioma armazenada no localStorage sob a chave \"i18nextLng\" quando o consentimento funcional é concedido.",
+				"Registro de consentimento armazenado no localStorage sob a chave \"lgpd-consent\" — usado para lembrar suas escolhas e evitar perguntas repetidas.",
+				"Metadados de rede (endereço IP e User-Agent) tratados em trânsito pela Cloudflare para fins de segurança e observabilidade. Nunca armazenamos o IP ou User-Agent em texto claro; apenas prefixos curtos de SHA-256 são gravados em logs de auditoria.",
+				"Informações que você envia voluntariamente no formulário de direitos do titular: nome completo, e-mail, CPF (opcional) e detalhes da solicitação. Identificadores (nome, e-mail, CPF) são hashed com SHA-256 antes do armazenamento; apenas o tipo da solicitação e o texto livre são armazenados em texto claro."
+			]
+		},
+		"legal-basis": {
+			"title": "4. Bases Legais para o Tratamento (LGPD Art. 7º)",
+			"items": [
+				"Consentimento (Art. 7º, I) — para armazenamento funcional e preferências persistidas.",
+				"Cumprimento de obrigação legal ou regulatória (Art. 7º, II) — para retenção de solicitações de direitos do titular.",
+				"Legítimo interesse do controlador (Art. 7º, IX) — para logs curtos de auditoria de segurança (IP/UA hashed), limitação de taxa e proteção contra abuso.",
+				"Execução de contrato (Art. 7º, V) — para atender requisições /api/run e /api/github iniciadas por você."
+			]
+		},
+		"sharing": {
+			"title": "5. Compartilhamento de Dados",
+			"body": [
+				"Compartilhamos dados pessoais apenas com os operadores abaixo, estritamente para a prestação do serviço.",
+				"Cloudflare, Inc. — provedor de infraestrutura (runtime Workers, Durable Objects, Worker Loaders, armazenamento KV, rede de borda). Atua como operador sob nosso controle.",
+				"GitHub, Inc. — apenas quando você envia explicitamente uma URL do GitHub para importação. A API não autenticada do GitHub é acessada do servidor; não transmitimos seu IP nem identificadores ao GitHub."
+			]
+		},
+		"international-transfer": {
+			"title": "6. Transferência Internacional de Dados",
+			"body": [
+				"A Cloudflare e o GitHub operam redes globais e podem tratar dados fora do Brasil, inclusive nos Estados Unidos e na União Europeia.",
+				"As transferências internacionais são realizadas com salvaguardas contratuais permitidas pelo Art. 33 da LGPD, incluindo cláusulas contratuais que exigem nível de proteção ao menos equivalente ao da LGPD."
+			]
+		},
+		"retention": {
+			"title": "7. Retenção de Dados",
+			"body": [
+				"Código-fonte do Worker submetido a /api/run: não persistido; empacotado e executado em memória; armazenado em cache apenas por hash de conteúdo dentro do Worker Loader pela duração da sessão.",
+				"Logs de console do Worker executado: transmitidos a você em tempo real e não persistidos além da sessão.",
+				"Registro de consentimento: retido até que você o revogue na página Gerenciar Consentimento.",
+				"Preferências de tema e idioma: retidas até a revogação do consentimento funcional ou limpeza do armazenamento do navegador.",
+				"Logs de auditoria (IP/UA hashed): retidos por até 6 meses para fins de segurança.",
+				"Registros de solicitações de direitos: retidos por 5 anos após o atendimento, para demonstrar conformidade com a LGPD."
+			]
+		},
+		"subject-rights": {
+			"title": "8. Direitos do Titular (LGPD Art. 18)",
+			"body": [
+				"A qualquer momento e gratuitamente, você pode solicitar ao controlador:",
+				"confirmação da existência de tratamento;",
+				"acesso aos seus dados;",
+				"correção de dados incompletos, inexatos ou desatualizados;",
+				"anonimização, bloqueio ou eliminação de dados desnecessários, excessivos ou tratados em desconformidade com a LGPD;",
+				"portabilidade dos dados a outro fornecedor de serviço ou produto;",
+				"eliminação dos dados pessoais tratados com base no consentimento;",
+				"informação das entidades públicas e privadas com as quais o controlador realizou uso compartilhado de dados;",
+				"informação sobre a possibilidade de não fornecer consentimento e sobre as consequências da negativa;",
+				"revogação do consentimento.",
+				"Envie qualquer dessas solicitações pelo <1>formulário de Direitos do Titular</1>."
+			]
+		},
+		"cookies": {
+			"title": "9. Cookies e Armazenamento no Navegador",
+			"body": [
+				"Esta aplicação não define cookies HTTP. Utilizamos apenas localStorage do navegador, com as seguintes chaves:",
+				"\"lgpd-consent\" (necessário) — armazena suas escolhas de consentimento.",
+				"\"theme\" (funcional) — armazena sua preferência de modo claro/escuro.",
+				"\"i18nextLng\" (funcional) — armazena sua preferência de idioma.",
+				"Você pode limpá-las a qualquer momento nas configurações do navegador ou na página Gerenciar Consentimento."
+			]
+		},
+		"security": {
+			"title": "10. Medidas de Segurança",
+			"body": [
+				"Todo o tráfego é servido sobre TLS.",
+				"Identificadores pessoais em solicitações de direitos são hashed com SHA-256 antes do armazenamento; endereços IP e User-Agents brutos nunca são armazenados.",
+				"O isolamento do runtime Workers impede que código submetido por você acesse o estado de outros usuários. Cada submissão é carregada em um Durable Object isolado por meio do binding do Worker Loader.",
+				"Operadores são incentivados a implantar este playground atrás do Cloudflare Access em produção, limitando a execução de código arbitrário a usuários autorizados.",
+				"O acesso a interfaces administrativas é restrito a pessoal autorizado."
+			]
+		},
+		"updates": {
+			"title": "11. Atualizações da Política",
+			"body": [
+				"Podemos atualizar esta política periodicamente. Mudanças materiais que afetem seu consentimento farão o banner reaparecer para que você possa revisar e aceitar ou rejeitar os novos termos.",
+				"Versão atual: 1.0.0. Última revisão: {{date}}."
+			]
+		},
+		"contact": {
+			"title": "12. Como Exercer Seus Direitos",
+			"body": [
+				"Use nosso <1>formulário de Direitos do Titular</1> para enviar qualquer solicitação acima.",
+				"Você também pode entrar em contato diretamente com o Encarregado em {{dpoEmail}}.",
+				"Você tem o direito de apresentar reclamação à ANPD (Autoridade Nacional de Proteção de Dados) caso considere que seus direitos foram violados."
+			]
+		}
+	}
+}

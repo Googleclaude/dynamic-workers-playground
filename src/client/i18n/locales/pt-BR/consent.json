@@ -1,0 +1,18 @@
+{
+	"title": "Gerenciar Consentimento",
+	"intro": "Revise e atualize suas escolhas de privacidade para este site. Você pode revogar o consentimento a qualquer momento.",
+	"currentChoices": "Escolhas atuais",
+	"recordedAt": "Registrado em",
+	"method": {
+		"label": "Método",
+		"accept-all": "Aceitou tudo",
+		"reject-all": "Rejeitou não essenciais",
+		"custom": "Seleção personalizada"
+	},
+	"noRecord": "Nenhum registro de consentimento encontrado. O banner reaparecerá para que você escolha.",
+	"save": "Salvar escolhas",
+	"revoke": "Revogar consentimento e limpar escolhas armazenadas",
+	"revokeConfirm": "Tem certeza? Suas preferências armazenadas serão apagadas e o banner de consentimento reaparecerá.",
+	"saved": "Preferências salvas.",
+	"revoked": "Registro de consentimento removido."
+}

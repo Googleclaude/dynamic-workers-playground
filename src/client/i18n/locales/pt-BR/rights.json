@@ -1,0 +1,44 @@
+{
+	"title": "Solicitação de Direitos do Titular",
+	"intro": "Use este formulário para exercer qualquer dos direitos garantidos pelo Art. 18 da LGPD. Responderemos em até 15 dias. Identificadores pessoais (nome, e-mail, CPF) são hashed antes do armazenamento; não conseguimos recuperá-los em texto claro.",
+	"types": {
+		"label": "Tipo de solicitação",
+		"confirmation": "Confirmação da existência de tratamento",
+		"access": "Acesso aos dados",
+		"correction": "Correção de dados incompletos, inexatos ou desatualizados",
+		"anonymization-blocking-deletion": "Anonimização, bloqueio ou eliminação",
+		"portability": "Portabilidade para outro fornecedor",
+		"sharing-info": "Informação sobre compartilhamento de dados",
+		"refusal-consequences": "Informação sobre consequências da recusa do consentimento",
+		"consent-revocation": "Revogação do consentimento",
+		"opposition": "Oposição ao tratamento"
+	},
+	"fields": {
+		"name": "Nome completo",
+		"namePlaceholder": "Como registrado conosco",
+		"email": "E-mail de contato",
+		"emailPlaceholder": "nome@exemplo.com",
+		"cpf": "CPF (opcional)",
+		"cpfPlaceholder": "000.000.000-00",
+		"cpfHelp": "Opcional. Armazenamos apenas um hash SHA-256 e os dois últimos dígitos.",
+		"details": "Detalhes da sua solicitação",
+		"detailsPlaceholder": "Descreva os dados ou a atividade de tratamento à qual está se referindo (máx. 2000 caracteres).",
+		"confirmSubject": "Confirmo que sou o titular dos dados ou estou autorizado a agir em seu nome.",
+		"submit": "Enviar solicitação",
+		"submitting": "Enviando…"
+	},
+	"errors": {
+		"required": "Por favor, preencha todos os campos obrigatórios.",
+		"emailFormat": "Por favor, informe um e-mail válido.",
+		"detailsTooLong": "Os detalhes devem ter no máximo 2000 caracteres.",
+		"confirmRequired": "Você precisa confirmar que é o titular dos dados.",
+		"submitFailed": "Não foi possível registrar sua solicitação. Tente novamente mais tarde ou envie um e-mail diretamente ao DPO."
+	},
+	"success": {
+		"title": "Solicitação recebida",
+		"description": "Sua solicitação foi registrada. Guarde o número de protocolo abaixo — você precisará dele para acompanhamento.",
+		"protocolLabel": "Número de protocolo",
+		"sla": "Responderemos em até 15 dias. As respostas são enviadas ao e-mail informado.",
+		"newRequest": "Enviar outra solicitação"
+	}
+}
