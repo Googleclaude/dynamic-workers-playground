@@ -41,15 +41,8 @@ export const POLICY_LAST_UPDATED = "2026-05-07";
 export const SUPPORTED_LANGUAGES = ["en", "pt-BR"] as const;
 export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
 
-export const RIGHTS_REQUEST_TYPES = [
-	"confirmation",
-	"access",
-	"correction",
-	"anonymization-blocking-deletion",
-	"portability",
-	"sharing-info",
-	"refusal-consequences",
-	"consent-revocation",
-	"opposition",
-] as const;
-export type RightsRequestType = (typeof RIGHTS_REQUEST_TYPES)[number];
+// Re-exported from the shared module so the typed picker (client) and
+// the validator (server) cannot drift. Single source of truth lives in
+// src/lgpd-shared.ts.
+export { RIGHTS_REQUEST_TYPES } from "../../lgpd-shared";
+export type { RightsRequestType } from "../../lgpd-shared";
