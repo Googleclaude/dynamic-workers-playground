@@ -125,7 +125,24 @@ async function lgpdPrelude(
 	const ipHash = await hmacShort(secret, ip || "anon");
 	const uaHash = await hmacShort(secret, ua || "anon");
 
-	if (!(await checkRateLimit(env, ipHash, scope))) {
+	// On Cloudflare, CF-Connecting-IP is always set. Its absence means local
+	// dev or a misconfigured upstream. Collapsing every such client into one
+	// shared "anon" bucket would let a single caller exhaust the limit for all
+	// of them — a denial-of-service of the rate-limiter itself. Fall back to
+	// the UA-derived bucket instead, and log the misconfiguration.
+	let rateLimitKey = ipHash;
+	if (!ip) {
+		rateLimitKey = uaHash;
+		console.log(
+			JSON.stringify({
+				event: `lgpd.${eventPrefix(scope)}.no-client-ip`,
+				ts: new Date().toISOString(),
+				ua_hash: uaHash,
+			}),
+		);
+	}
+
+	if (!(await checkRateLimit(env, rateLimitKey, scope))) {
 		console.log(
 			JSON.stringify({
 				event: `lgpd.${eventPrefix(scope)}.rate-limited`,
