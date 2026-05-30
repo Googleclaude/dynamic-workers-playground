@@ -34,6 +34,57 @@ function withSecurityHeaders(response: Response): Response {
   return res;
 }
 
+// Thrown by readJsonWithLimit when the request body exceeds the byte budget.
+class BodyTooLargeError extends Error {
+  constructor() {
+    super("Request body too large.");
+    this.name = "BodyTooLargeError";
+  }
+}
+
+// Read and JSON-parse a request body, enforcing a hard byte cap while
+// streaming. The Content-Length header is an unreliable cap: chunked
+// transfer encoding (HTTP/1.1) or an omitted length lets a client bypass a
+// header-only check, then `request.json()` buffers the whole payload into
+// memory. Counting bytes off the stream and aborting on overflow is the
+// only enforcement that can't be lied about.
+async function readJsonWithLimit<T>(
+  request: Request,
+  maxBytes: number
+): Promise<T> {
+  const reader = request.body?.getReader();
+  if (!reader) {
+    // No readable stream (e.g. empty body). text() is already bounded here.
+    const text = await request.text();
+    if (new TextEncoder().encode(text).length > maxBytes) {
+      throw new BodyTooLargeError();
+    }
+    return JSON.parse(text) as T;
+  }
+
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel();
+      throw new BodyTooLargeError();
+    }
+    chunks.push(value);
+  }
+
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return JSON.parse(new TextDecoder().decode(merged)) as T;
+}
+
 type LoaderExports = {
   LogSession: {
     getByName(name: string): {
@@ -298,7 +349,8 @@ export default {
 
     if (url.pathname === "/api/run" && request.method === "POST") {
       try {
-        // Enforce body size limit before parsing.
+        // Fast-path: reject early when the (advisory) Content-Length already
+        // exceeds the cap, before reading a single byte.
         const contentLength = Number(request.headers.get("content-length") ?? 0);
         if (contentLength > MAX_RUN_BODY_BYTES) {
           return withSecurityHeaders(
@@ -306,8 +358,12 @@ export default {
           );
         }
 
-        const { files, pathname, options } =
-          (await request.json()) as RunRequestBody;
+        // Authoritative enforcement: count bytes off the stream and abort on
+        // overflow. A missing or chunked Content-Length can't bypass this.
+        const { files, pathname, options } = await readJsonWithLimit<RunRequestBody>(
+          request,
+          MAX_RUN_BODY_BYTES
+        );
 
         if (!files || typeof files !== "object" || Array.isArray(files)) {
           return withSecurityHeaders(
@@ -424,6 +480,16 @@ export default {
           await executeWorker(worker, state, workerId, sourceWarnings, pathname ?? "/")
         );
       } catch (error) {
+        if (error instanceof BodyTooLargeError) {
+          return withSecurityHeaders(
+            Response.json({ error: error.message }, { status: 413 })
+          );
+        }
+        if (error instanceof SyntaxError) {
+          return withSecurityHeaders(
+            Response.json({ error: "Invalid JSON body." }, { status: 400 })
+          );
+        }
         return withSecurityHeaders(buildErrorResponse(error));
       }
     }
