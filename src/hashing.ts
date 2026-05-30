@@ -8,11 +8,6 @@ export async function sha256Hex(input: string): Promise<string> {
 	).join("");
 }
 
-export async function hashShort(input: string, length = 16): Promise<string> {
-	const hex = await sha256Hex(input);
-	return hex.slice(0, length);
-}
-
 // HMAC-SHA256 keyed by a server-side secret. Use this for ANY hash of
 // personal data persisted server-side (subject hashes, IP, UA). Without a
 // secret, raw SHA-256 of a small input space (e.g. CPF, IPv4) is trivially
