@@ -1,0 +1,17 @@
+# Cloudflare Workers Assets `_headers` rules — applied to every static
+# asset response (HTML, JS, CSS, images, …) served bypass-worker per
+# wrangler.jsonc's `run_worker_first: ["/api/*"]`. /api/* responses are
+# JSON served by src/server.ts and get their own SECURITY_HEADERS; the
+# SPA HTML/CSS/JS rely on this file.
+#
+# `script-src 'unsafe-inline'` is required for the pre-hydration theme
+# bootstrap inlined in index.html. `style-src 'unsafe-inline'` is
+# required because Kumo + Tailwind inject style tags at runtime;
+# tighten to nonce-based CSP if you migrate away from those.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(), camera=(), microphone=(), payment=(), interest-cohort=()
