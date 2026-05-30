@@ -52,6 +52,13 @@ bash scripts/setup-lgpd.sh
 
 The script is idempotent and refuses to clobber existing resources.
 
+Compliance documentation (legal bases, ROPA, DPIA, incident response, and
+international transfer) lives in [`docs/lgpd/`](docs/lgpd/); the consolidated
+security/LGPD/quality review is in
+[`docs/review/relatorio-final-revisao.md`](docs/review/relatorio-final-revisao.md).
+To enable encryption of rights-request details at rest, also provision
+`LGPD_KV_ENCRYPTION_KEY` (`wrangler secret put LGPD_KV_ENCRYPTION_KEY`).
+
 ## How it works
 
 When you click **Run Worker**, the host Worker receives your source files and calls `createWorker()` from `@cloudflare/worker-bundler` to bundle them at runtime:
