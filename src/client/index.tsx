@@ -340,7 +340,13 @@ export function handleUsers(request: Request): Response {
 ];
 
 function snapshotFiles(files: PlaygroundFiles) {
-  return JSON.stringify(files);
+  // Sort keys so the snapshot is insertion-order independent, matching the
+  // server's createWorkerId hashing. Otherwise renaming/reordering a file
+  // triggers a spurious version bump and an unnecessary rebuild.
+  const sorted = Object.keys(files)
+    .sort()
+    .map((key) => [key, files[key]]);
+  return JSON.stringify(sorted);
 }
 
 function inferPrimaryFile(files: PlaygroundFiles) {
