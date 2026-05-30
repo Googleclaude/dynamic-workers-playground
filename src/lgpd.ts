@@ -12,6 +12,7 @@
 // pseudonymisation is preferable to claiming anonymisation we don't deliver.
 
 import { hmacHex, hmacShort, sha256Hex } from "./hashing";
+import { isAllowedOrigin } from "./origin";
 
 const RIGHTS_REQUEST_TYPES = new Set([
 	"confirmation",
@@ -66,19 +67,6 @@ async function checkRateLimit(
 	const stub = env.LgpdRateLimit.get(id);
 	const { allowed } = await stub.check(scope);
 	return allowed;
-}
-
-// Reject browser POSTs from other origins. Non-browser clients (no Origin
-// header) are allowed because they're outside the CSRF threat model.
-function isAllowedOrigin(request: Request): boolean {
-	const origin = request.headers.get("Origin");
-	if (!origin) return true;
-	const host = request.headers.get("Host") ?? "";
-	try {
-		return new URL(origin).host === host;
-	} catch {
-		return false;
-	}
 }
 
 function makeProtocol(): string {

@@ -7,6 +7,7 @@ import {
   scanFiles,
   type ComplianceViolation,
 } from "./compliance";
+import { isAllowedOrigin } from "./origin";
 
 export { DynamicWorkerTail, LogSession } from "./logging";
 export { LgpdRateLimit } from "./lgpd-rate-limit";
@@ -279,6 +280,11 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === "/api/github" && request.method === "POST") {
+      if (!isAllowedOrigin(request)) {
+        return withSecurityHeaders(
+          Response.json({ error: "forbidden-origin" }, { status: 403 })
+        );
+      }
       return withSecurityHeaders(await handleGitHubImport(request));
     }
 
@@ -297,6 +303,11 @@ export default {
     }
 
     if (url.pathname === "/api/run" && request.method === "POST") {
+      if (!isAllowedOrigin(request)) {
+        return withSecurityHeaders(
+          Response.json({ error: "forbidden-origin" }, { status: 403 })
+        );
+      }
       try {
         // Enforce body size limit before parsing.
         const contentLength = Number(request.headers.get("content-length") ?? 0);
