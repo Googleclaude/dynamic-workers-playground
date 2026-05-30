@@ -269,15 +269,15 @@ export default {
     label: "With Env Bindings",
     files: {
       "src/index.ts": `interface Env {
-  API_KEY: string;
+  EXAMPLE_API_KEY: string;
   DEBUG: string;
 }
 
 export default {
   fetch(request: Request, env: Env): Response {
     const data = {
-      hasApiKey: !!env.API_KEY,
-      apiKeyPreview: env.API_KEY ? env.API_KEY.slice(0, 4) + "..." : null,
+      hasApiKey: !!env.EXAMPLE_API_KEY,
+      apiKeyPreview: env.EXAMPLE_API_KEY ? env.EXAMPLE_API_KEY.slice(0, 4) + "..." : null,
       debugMode: env.DEBUG === "true"
     };
 

@@ -418,7 +418,7 @@ export default {
               wranglerConfig?.compatibilityDate ?? "2026-01-01",
             compatibilityFlags: wranglerConfig?.compatibilityFlags ?? [],
             env: {
-              API_KEY: "sk-example-key-12345",
+              EXAMPLE_API_KEY: "sk-example-key-12345",
               DEBUG: "true",
               WORKER_ID: workerId,
             },

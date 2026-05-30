@@ -25,7 +25,7 @@ This is a **Cloudflare Worker that runs other Cloudflare Workers**. The host Wor
 1. Client posts `{ files, version, pathname?, options? }`.
 2. `normalizeFiles` injects a synthetic `package.json` (with inferred `main`) when one is not provided.
 3. `createWorkerId` hashes the sorted files + bundle/minify options into a stable `dynamic-workers-playground-worker-<hash>` ID. Identical inputs → same ID → `env.LOADER.get` returns the cached worker (warm start). Different inputs → the loader callback runs and `@cloudflare/worker-bundler`'s `createWorker({ files, bundle, minify })` produces `mainModule` + `modules`.
-4. The loaded worker is configured with a fixed env (`API_KEY`, `DEBUG`, `WORKER_ID`), `globalOutbound: null`, and a single tail Worker — `DynamicWorkerTail` — bound to `props: { workerId }`.
+4. The loaded worker is configured with a fixed env (`EXAMPLE_API_KEY`, `DEBUG`, `WORKER_ID`), `globalOutbound: null`, and a single tail Worker — `DynamicWorkerTail` — bound to `props: { workerId }`.
 5. `executeWorker` calls `entrypoint.__warmup__?.()` (intentionally non-existent — the catch is the cold-start trigger; do not "fix" this), opens a `LogSession` waiter, fetches the request, then collects logs with a 1s deadline.
 6. Response includes `bundleInfo`, the worker's response, captured `logs`, and a `timing` breakdown (`buildTime`/`loadTime`/`runTime`). When the loader cache hits, `bundleInfo` is reported as `(cached)` because `createWorker` was not called.
 
@@ -61,7 +61,7 @@ Single-file React 19 app using `@cloudflare/kumo` + `@phosphor-icons/react`. Hol
 ## Conventions
 
 - TypeScript strict mode, `verbatimModuleSyntax`, `allowImportingTsExtensions`, ES2022 modules. Type-only imports must use `import type`.
-- The bundled dynamic worker receives a hard-coded env (`API_KEY: "sk-example-key-12345"`, `DEBUG: "true"`, `WORKER_ID`). This is an example value, not a secret — but treat it as the intended interface for example workers.
+- The bundled dynamic worker receives a hard-coded env (`EXAMPLE_API_KEY: "sk-example-key-12345"`, `DEBUG: "true"`, `WORKER_ID`). This is an example value, not a secret — the `EXAMPLE_` prefix is deliberate so readers don't mistake it for a real binding.
 - Keep `executeWorker`'s warmup pattern intact: the empty-catch on `__warmup__` is load-bohaviour, not a bug.
 - When changing the run-request shape, update both `RunRequestBody` in `server.ts` and `RunResult` / the `fetch` call in `src/client/index.tsx`.
 
