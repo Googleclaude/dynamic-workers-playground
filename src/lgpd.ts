@@ -89,7 +89,7 @@ export function validateRightsRequestBody(body: RightsRequestBody): ValidationRe
 	if (!body.requestType || !RIGHTS_REQUEST_TYPES.has(body.requestType)) return { ok: false, error: "invalid-request-type" };
 	if (!body.nameHash || !HEX64_RE.test(body.nameHash)) return { ok: false, error: "invalid-name-hash" };
 	if (!body.emailHash || !HEX64_RE.test(body.emailHash)) return { ok: false, error: "invalid-email-hash" };
-	if (!body.details || typeof body.details !== "string") return { ok: false, error: "missing-details" };
+	if (body.details == null || typeof body.details !== "string") return { ok: false, error: "missing-details" };
 	if (body.details.length === 0 || body.details.length > 2000) return { ok: false, error: "details-length" };
 	if (body.confirmedSubject !== true) return { ok: false, error: "subject-not-confirmed" };
 	if (body.cpfHash && !HEX64_RE.test(body.cpfHash)) return { ok: false, error: "invalid-cpf-hash" };
