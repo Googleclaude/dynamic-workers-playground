@@ -6,8 +6,16 @@
 # `style-src 'unsafe-inline'` is required because Kumo + Tailwind inject
 # style tags at runtime; tighten to nonce-based CSP if you migrate away
 # from those.
+#
+# `script-src 'self' 'sha256-...'` allowlists the pre-hydration theme
+# bootstrap (inline <script> in index.html). If you edit that script you
+# MUST regenerate the hash and update the value below:
+#   awk '/<script>/,/<\/script>/' index.html | sed '1d;$d' \
+#     | openssl dgst -sha256 -binary | openssl base64 -A
+# Without the matching hash the bootstrap is silently blocked by CSP and
+# the theme flashes on every reload.
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-fskUg/gPhUxq801XjVmLkdt4B5vPD6rFkC0nMr2oHZk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'
   X-Frame-Options: DENY
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
