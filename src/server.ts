@@ -19,12 +19,16 @@ const MAX_FILE_COUNT = 50;
 // Maximum size of a single source file (1 MB).
 const MAX_FILE_BYTES = 1 * 1024 * 1024;
 
-// Security headers added to every API response.
+// Security headers added to every API response. HSTS pins TLS for in-transit
+// protection (art. 46); no-store keeps dynamic responses (which may carry a
+// rights-request protocol or redacted output) out of shared caches.
 const SECURITY_HEADERS: Record<string, string> = {
   "X-Content-Type-Options": "nosniff",
   "X-Frame-Options": "DENY",
   "Referrer-Policy": "strict-origin-when-cross-origin",
   "Permissions-Policy": "interest-cohort=()",
+  "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+  "Cache-Control": "no-store",
 };
 
 function withSecurityHeaders(response: Response): Response {
