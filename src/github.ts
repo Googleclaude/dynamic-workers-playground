@@ -99,23 +99,30 @@ async function fetchGitHubDirectory(
       return;
     }
 
-    await Promise.all(
-      contents.map(async (item) => {
-        if (item.type === "file" && isSafeDownloadUrl(item.download_url)) {
-          const fileResponse = await fetch(item.download_url!);
-          if (fileResponse.ok) {
-            const content = await fileResponse.text();
-            const relativePath = basePath ? item.path.replace(`${basePath}/`, "") : item.path;
-            files[relativePath] = content;
+    // Bound concurrency: an unbounded Promise.all over a large directory can
+    // blow past the Worker subrequest cap and trip GitHub's rate limit on a
+    // single import. Process in fixed-size batches instead.
+    const CONCURRENCY = 6;
+    for (let i = 0; i < contents.length; i += CONCURRENCY) {
+      const batch = contents.slice(i, i + CONCURRENCY);
+      await Promise.all(
+        batch.map(async (item) => {
+          if (item.type === "file" && isSafeDownloadUrl(item.download_url)) {
+            const fileResponse = await fetch(item.download_url!);
+            if (fileResponse.ok) {
+              const content = await fileResponse.text();
+              const relativePath = basePath ? item.path.replace(`${basePath}/`, "") : item.path;
+              files[relativePath] = content;
+            }
+            return;
           }
-          return;
-        }
 
-        if (item.type === "dir") {
-          await fetchDir(item.path);
-        }
-      })
-    );
+          if (item.type === "dir") {
+            await fetchDir(item.path);
+          }
+        })
+      );
+    }
   }
 
   await fetchDir(basePath);
