@@ -12,18 +12,7 @@
 // pseudonymisation is preferable to claiming anonymisation we don't deliver.
 
 import { hmacHex, hmacShort, sha256Hex } from "./hashing";
-
-const RIGHTS_REQUEST_TYPES = new Set([
-	"confirmation",
-	"access",
-	"correction",
-	"anonymization-blocking-deletion",
-	"portability",
-	"sharing-info",
-	"refusal-consequences",
-	"consent-revocation",
-	"opposition",
-]);
+import { RIGHTS_REQUEST_TYPES_SET } from "./lgpd-shared";
 
 const HEX64_RE = /^[0-9a-f]{64}$/;
 const UUID_RE =
@@ -86,7 +75,7 @@ export type ValidationResult =
 	| { ok: false; error: string };
 
 export function validateRightsRequestBody(body: RightsRequestBody): ValidationResult {
-	if (!body.requestType || !RIGHTS_REQUEST_TYPES.has(body.requestType)) return { ok: false, error: "invalid-request-type" };
+	if (!body.requestType || !RIGHTS_REQUEST_TYPES_SET.has(body.requestType)) return { ok: false, error: "invalid-request-type" };
 	if (!body.nameHash || !HEX64_RE.test(body.nameHash)) return { ok: false, error: "invalid-name-hash" };
 	if (!body.emailHash || !HEX64_RE.test(body.emailHash)) return { ok: false, error: "invalid-email-hash" };
 	if (body.details == null || typeof body.details !== "string") return { ok: false, error: "missing-details" };
