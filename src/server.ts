@@ -279,14 +279,21 @@ function redactViolationFile(v: ComplianceViolation): ComplianceViolation {
 }
 
 function buildErrorResponse(error: unknown): Response {
-  // Log full error internally; send only the redacted message to the client.
-  // Never return a stack trace — it can expose internal module paths.
-  console.error("Error in dynamic-workers-playground:", error);
+  // Log internally, but redact first: CF observability ingests console.* raw,
+  // so an unredacted message/stack would leak any secret the guest worker's
+  // error happened to embed. Redact both channels, never return the stack.
   const rawMessage = error instanceof Error ? error.message : "Unknown error";
-  return Response.json(
-    { error: redactInPlace(rawMessage) },
-    { status: 500 }
-  );
+  const redactedMessage = redactInPlace(rawMessage);
+  if (error instanceof Error && error.stack) {
+    console.error(
+      "Error in dynamic-workers-playground:",
+      redactedMessage,
+      redactInPlace(error.stack)
+    );
+  } else {
+    console.error("Error in dynamic-workers-playground:", redactedMessage);
+  }
+  return Response.json({ error: redactedMessage }, { status: 500 });
 }
 
 function normalizeFiles(
