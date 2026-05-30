@@ -5,10 +5,11 @@
   "type": "module",
   "scripts": {
     "start": "vite dev",
-    "build": "vite build && wrangler deploy",
-    "deploy": "vite build && wrangler deploy",
+    "build": "npm run check:lgpd && vite build && wrangler deploy",
+    "deploy": "npm run check:lgpd && vite build && wrangler deploy",
     "test": "vitest run",
-    "types": "wrangler types env.d.ts --include-runtime false"
+    "types": "wrangler types env.d.ts --include-runtime false",
+    "check:lgpd": "node scripts/check-lgpd-constants.mjs"
   },
   "dependencies": {
     "@cloudflare/kumo": "^1.15.0",
