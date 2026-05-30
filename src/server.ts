@@ -2,6 +2,8 @@ import { exports } from "cloudflare:workers";
 import { createWorker } from "@cloudflare/worker-bundler";
 import { handleGitHubImport } from "./github";
 import { handleConsentAudit, handleRightsRequest } from "./lgpd";
+import { handleAdminListRequests } from "./lgpd-admin";
+import { reportSecurityEvent } from "./security-events";
 import {
   redactString,
   scanFiles,
@@ -333,6 +335,15 @@ export default {
       return withSecurityHeaders(await handleConsentAudit(request, env));
     }
 
+    if (
+      url.pathname === "/api/lgpd/admin/requests" &&
+      request.method === "GET"
+    ) {
+      return withSecurityHeaders(
+        await handleAdminListRequests(request, env, ctx)
+      );
+    }
+
     if (url.pathname === "/api/run" && request.method === "POST") {
       try {
         // Enforce body size limit via streaming reader (S-01 audit fix).
@@ -405,6 +416,21 @@ export default {
         const allViolations = scanFiles(normalizedFiles);
         const blocking = allViolations.filter((v) => v.severity === "block");
         if (blocking.length > 0) {
+          // L-02: a blocked submission means a real secret pattern was
+          // present in user-supplied source — surface it as a security
+          // event for incident detection (art. 48). Only the rule ids are
+          // reported, never the matched secret.
+          reportSecurityEvent(
+            env,
+            {
+              kind: "secret-in-source",
+              detail: {
+                count: blocking.length,
+                rules: blocking.map((v) => v.ruleId).join(","),
+              },
+            },
+            ctx
+          );
           return withSecurityHeaders(
             Response.json(
               {

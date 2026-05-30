@@ -9,6 +9,13 @@ declare namespace Cloudflare {
 	interface Env {
 		LGPD_KV?: KVNamespace;
 		LGPD_HASH_SECRET?: string;
+		// Admin endpoint bearer token (L-06). Without it /api/lgpd/admin/*
+		// returns 503. Provision via: wrangler secret put LGPD_ADMIN_TOKEN
+		LGPD_ADMIN_TOKEN?: string;
+		// Optional real-time security-alert webhook (L-02). Without it,
+		// alerts still emit as structured console.error for Logpush.
+		// Provision via: wrangler secret put LGPD_ALERT_WEBHOOK
+		LGPD_ALERT_WEBHOOK?: string;
 		LgpdRateLimit: DurableObjectNamespace<
 			import("./lgpd-rate-limit").LgpdRateLimit
 		>;
