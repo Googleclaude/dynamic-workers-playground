@@ -320,28 +320,24 @@ export async function handleConsentAudit(
 		);
 	}
 
-	// Validate caller-supplied timestamp: must be ISO 8601 UTC and not in
-	// the future by more than 5 min (clock-skew tolerance) or in the past
-	// by more than 24 h. Fall back to server time on invalid input.
-	let auditTs = new Date().toISOString();
-	if (body.ts && typeof body.ts === "string" && ISO_TS_RE.test(body.ts)) {
-		const supplied = new Date(body.ts).getTime();
-		const now = Date.now();
-		if (
-			!Number.isNaN(supplied) &&
-			supplied <= now + 5 * 60_000 &&
-			supplied >= now - 24 * 60 * 60_000
-		) {
-			auditTs = body.ts;
-		}
-	}
+	// The server timestamp is authoritative: it's the legal record of when
+	// consent reached us, so the client must not be able to backdate it (the
+	// old 24 h acceptance window let a caller antedate consent). We still keep
+	// the client-reported time as informative metadata when it's well-formed
+	// ISO 8601, but it never overrides serverTs.
+	const serverTs = new Date().toISOString();
+	const clientTs =
+		body.ts && typeof body.ts === "string" && ISO_TS_RE.test(body.ts)
+			? body.ts
+			: undefined;
 
 	const auditRecord = {
 		id: body.id,
 		version: body.version,
 		categories: body.categories,
 		method: body.method,
-		ts: auditTs,
+		serverTs,
+		clientTs,
 		ip_hash: ipHash,
 		ua_hash: uaHash,
 	};
@@ -356,7 +352,7 @@ export async function handleConsentAudit(
 			event: "lgpd.consent.audit",
 			consentId: body.id,
 			method: body.method,
-			ts: auditRecord.ts,
+			ts: serverTs,
 			ip_hash: ipHash,
 			ua_hash: uaHash,
 		}),
