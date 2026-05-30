@@ -11,6 +11,7 @@
 // Without the secret, the endpoints return 503 — refusing to log weak
 // pseudonymisation is preferable to claiming anonymisation we don't deliver.
 
+import { encryptString } from "./encryption";
 import { hmacHex, hmacShort, sha256Hex } from "./hashing";
 
 const RIGHTS_REQUEST_TYPES = new Set([
@@ -62,6 +63,12 @@ interface Prelude {
 function getHashSecret(env: Env): string | null {
 	const secret = (env as Env & { LGPD_HASH_SECRET?: string }).LGPD_HASH_SECRET;
 	return secret && secret.length > 0 ? secret : null;
+}
+
+function getEncryptionKey(env: Env): string | null {
+	const key = (env as Env & { LGPD_KV_ENCRYPTION_KEY?: string })
+		.LGPD_KV_ENCRYPTION_KEY;
+	return key && key.length > 0 ? key : null;
 }
 
 // Rate-limit via the LgpdRateLimit Durable Object (declared in wrangler.jsonc
@@ -244,6 +251,24 @@ export async function handleRightsRequest(
 		`${id}|${body.requestType}|${subjectNameHash}|${subjectEmailHash}|${receivedAt}`,
 	);
 
+	// The free-text `details` can contain personal data, so encrypt it at rest
+	// when an encryption key is provisioned. Encryption is opt-in to stay
+	// backward-compatible with existing deployments; when the key is absent we
+	// store plaintext and warn so the gap is observable (art. 46).
+	const encryptionKey = getEncryptionKey(env);
+	const detailsEncrypted = encryptionKey !== null;
+	const storedDetails = encryptionKey
+		? await encryptString(encryptionKey, body.details as string)
+		: (body.details as string);
+	if (!encryptionKey) {
+		console.log(
+			JSON.stringify({
+				event: "lgpd.rights-request.details-unencrypted",
+				ts: receivedAt,
+			}),
+		);
+	}
+
 	const record = {
 		id,
 		protocol,
@@ -255,7 +280,8 @@ export async function handleRightsRequest(
 			emailHash: subjectEmailHash,
 			cpfHash: subjectCpfHash,
 		},
-		details: body.details,
+		details: storedDetails,
+		detailsEncrypted,
 		status: "received" as const,
 		integrity,
 		ip_hash: ipHash,
