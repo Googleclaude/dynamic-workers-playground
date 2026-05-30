@@ -41,8 +41,11 @@ function toRequestSummary(event: TraceItem, workerId: string): StructuredDynamic
     return null;
   }
 
-  const url = event.event.request.url;
-  const path = new URL(url).pathname;
+  const parsedUrl = new URL(event.event.request.url);
+  const path = parsedUrl.pathname;
+  // Drop the query string and any credentials before persisting: it can carry
+  // tokens or other personal data (LGPD art. 6 — minimization).
+  const url = `${parsedUrl.origin}${parsedUrl.pathname}`;
   const status = event.event.response?.status;
 
   return {
@@ -98,6 +101,11 @@ class LogWaiter extends RpcTarget {
   private logs: LogEntry[] = [];
   private resolve: ((logs: LogEntry[]) => void) | undefined;
 
+  // Called once getLogs settles so the owning session can drop its reference.
+  constructor(private readonly onSettled: () => void = () => {}) {
+    super();
+  }
+
   addLogs(logs: LogEntry[]) {
     this.logs.push(...logs);
     if (this.resolve) {
@@ -108,31 +116,41 @@ class LogWaiter extends RpcTarget {
 
   async getLogs(timeoutMs: number): Promise<LogEntry[]> {
     if (this.logs.length > 0) {
+      this.onSettled();
       return this.logs;
     }
 
     return new Promise<LogEntry[]>((resolve) => {
-      const timeout = setTimeout(() => resolve(this.logs), timeoutMs);
+      const settle = (logs: LogEntry[]) => {
+        this.onSettled();
+        resolve(logs);
+      };
+      const timeout = setTimeout(() => settle(this.logs), timeoutMs);
       this.resolve = (logs) => {
         clearTimeout(timeout);
-        resolve(logs);
+        settle(logs);
       };
     });
   }
 }
 
 export class LogSession extends DurableObject {
-  private waiter: LogWaiter | null = null;
+  // Multiple runs can share a workerId (the id is a hash of the source files),
+  // so a single session may have several concurrent waiters. Track them all and
+  // broadcast incoming logs to each, rather than silently dropping the previous
+  // waiter on every waitForLogs() call.
+  private waiters = new Set<LogWaiter>();
 
   async addLogs(logs: LogEntry[]) {
-    if (this.waiter) {
-      this.waiter.addLogs(logs);
+    for (const waiter of this.waiters) {
+      waiter.addLogs(logs);
     }
   }
 
   async waitForLogs(): Promise<LogWaiter> {
-    this.waiter = new LogWaiter();
-    return this.waiter;
+    const waiter: LogWaiter = new LogWaiter(() => this.waiters.delete(waiter));
+    this.waiters.add(waiter);
+    return waiter;
   }
 }
 
