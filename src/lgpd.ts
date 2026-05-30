@@ -25,6 +25,8 @@ const RIGHTS_REQUEST_TYPES = new Set([
 	"opposition",
 ]);
 
+const CONSENT_METHODS = ["accept-all", "reject-all", "custom"];
+
 const HEX64_RE = /^[0-9a-f]{64}$/;
 const UUID_RE =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -49,6 +51,14 @@ interface ConsentAuditBody {
 	ts?: string;
 }
 
+type Scope = "rights" | "audit";
+
+interface Prelude {
+	secret: string;
+	ipHash: string;
+	uaHash: string;
+}
+
 function getHashSecret(env: Env): string | null {
 	const secret = (env as Env & { LGPD_HASH_SECRET?: string }).LGPD_HASH_SECRET;
 	return secret && secret.length > 0 ? secret : null;
@@ -59,10 +69,10 @@ function getHashSecret(env: Env): string | null {
 // across edge nodes — better than an in-memory Map per isolate.
 async function checkRateLimit(
 	env: Env,
-	ipHash: string,
-	scope: "rights" | "audit",
+	key: string,
+	scope: Scope,
 ): Promise<boolean> {
-	const id = env.LgpdRateLimit.idFromName(ipHash);
+	const id = env.LgpdRateLimit.idFromName(key);
 	const stub = env.LgpdRateLimit.get(id);
 	const { allowed } = await stub.check(scope);
 	return allowed;
@@ -81,6 +91,93 @@ function isAllowedOrigin(request: Request): boolean {
 	}
 }
 
+// Human-readable event prefix for structured logs, per scope.
+function eventPrefix(scope: Scope): string {
+	return scope === "rights" ? "rights-request" : "consent";
+}
+
+// Shared gate for both LGPD endpoints: origin check, secret presence, IP/UA
+// pseudonymisation, and rate-limit. Returns the derived hashes on success, or
+// a ready-to-send error Response on rejection. Centralising this keeps the two
+// handlers in sync — a change to the threat model lands in exactly one place.
+async function lgpdPrelude(
+	request: Request,
+	env: Env,
+	scope: Scope,
+): Promise<Prelude | Response> {
+	if (!isAllowedOrigin(request)) {
+		return Response.json({ error: "forbidden-origin" }, { status: 403 });
+	}
+
+	const secret = getHashSecret(env);
+	if (!secret) {
+		console.log(
+			JSON.stringify({
+				event: `lgpd.${eventPrefix(scope)}.secret-missing`,
+				ts: new Date().toISOString(),
+			}),
+		);
+		return Response.json({ error: "secret-unavailable" }, { status: 503 });
+	}
+
+	const ip = request.headers.get("CF-Connecting-IP") ?? "";
+	const ua = request.headers.get("user-agent") ?? "";
+	const ipHash = await hmacShort(secret, ip || "anon");
+	const uaHash = await hmacShort(secret, ua || "anon");
+
+	if (!(await checkRateLimit(env, ipHash, scope))) {
+		console.log(
+			JSON.stringify({
+				event: `lgpd.${eventPrefix(scope)}.rate-limited`,
+				ts: new Date().toISOString(),
+				ip_hash: ipHash,
+				ua_hash: uaHash,
+			}),
+		);
+		return Response.json({ error: "rate-limited" }, { status: 429 });
+	}
+
+	return { secret, ipHash, uaHash };
+}
+
+// Validate a rights-request body. Returns the name of the first invalid field,
+// or null when the body is well-formed. Surfacing the field helps the client
+// fix the submission without leaking server internals.
+function validateRightsRequest(body: RightsRequestBody): string | null {
+	if (!body.requestType || !RIGHTS_REQUEST_TYPES.has(body.requestType)) {
+		return "requestType";
+	}
+	if (!body.nameHash || !HEX64_RE.test(body.nameHash)) return "nameHash";
+	if (!body.emailHash || !HEX64_RE.test(body.emailHash)) return "emailHash";
+	if (
+		typeof body.details !== "string" ||
+		body.details.length === 0 ||
+		body.details.length > 2000
+	) {
+		return "details";
+	}
+	if (body.confirmedSubject !== true) return "confirmedSubject";
+	if (body.cpfHash && !HEX64_RE.test(body.cpfHash)) return "cpfHash";
+	return null;
+}
+
+// Validate a consent-audit body. Returns the first invalid field, or null.
+function validateConsentAudit(body: ConsentAuditBody): string | null {
+	if (!body.id || !UUID_RE.test(body.id)) return "id";
+	if (
+		!body.version ||
+		typeof body.version !== "string" ||
+		body.version.length > 32
+	) {
+		return "version";
+	}
+	if (!body.categories || typeof body.categories !== "object") {
+		return "categories";
+	}
+	if (!body.method || !CONSENT_METHODS.includes(body.method)) return "method";
+	return null;
+}
+
 function makeProtocol(): string {
 	const now = new Date();
 	const yyyy = now.getUTCFullYear();
@@ -94,37 +191,9 @@ export async function handleRightsRequest(
 	request: Request,
 	env: Env,
 ): Promise<Response> {
-	if (!isAllowedOrigin(request)) {
-		return Response.json({ error: "forbidden-origin" }, { status: 403 });
-	}
-
-	const secret = getHashSecret(env);
-	if (!secret) {
-		console.log(
-			JSON.stringify({
-				event: "lgpd.rights-request.secret-missing",
-				ts: new Date().toISOString(),
-			}),
-		);
-		return Response.json({ error: "secret-unavailable" }, { status: 503 });
-	}
-
-	const ip = request.headers.get("CF-Connecting-IP") ?? "";
-	const ua = request.headers.get("user-agent") ?? "";
-	const ipHash = await hmacShort(secret, ip || "anon");
-	const uaHash = await hmacShort(secret, ua || "anon");
-
-	if (!(await checkRateLimit(env, ipHash, "rights"))) {
-		console.log(
-			JSON.stringify({
-				event: "lgpd.rights-request.rate-limited",
-				ts: new Date().toISOString(),
-				ip_hash: ipHash,
-				ua_hash: uaHash,
-			}),
-		);
-		return Response.json({ error: "rate-limited" }, { status: 429 });
-	}
+	const pre = await lgpdPrelude(request, env, "rights");
+	if (pre instanceof Response) return pre;
+	const { secret, ipHash, uaHash } = pre;
 
 	let body: RightsRequestBody;
 	try {
@@ -133,32 +202,20 @@ export async function handleRightsRequest(
 		return Response.json({ error: "invalid-json" }, { status: 400 });
 	}
 
-	if (
-		!body.requestType ||
-		!RIGHTS_REQUEST_TYPES.has(body.requestType) ||
-		!body.nameHash ||
-		!HEX64_RE.test(body.nameHash) ||
-		!body.emailHash ||
-		!HEX64_RE.test(body.emailHash) ||
-		!body.details ||
-		typeof body.details !== "string" ||
-		body.details.length === 0 ||
-		body.details.length > 2000 ||
-		body.confirmedSubject !== true
-	) {
-		return Response.json({ error: "invalid-payload" }, { status: 400 });
-	}
-
-	if (body.cpfHash && !HEX64_RE.test(body.cpfHash)) {
-		return Response.json({ error: "invalid-cpf-hash" }, { status: 400 });
+	const invalidField = validateRightsRequest(body);
+	if (invalidField) {
+		return Response.json(
+			{ error: "invalid-payload", field: invalidField },
+			{ status: 400 },
+		);
 	}
 
 	// Re-HMAC the client-supplied subject hashes with the server secret.
 	// The client SHA-256 is what we agreed to over the wire; the server HMAC
 	// is what we persist. An attacker who exfiltrates KV cannot rainbow-table
 	// the stored values without also exfiltrating LGPD_HASH_SECRET.
-	const subjectNameHash = await hmacHex(secret, body.nameHash);
-	const subjectEmailHash = await hmacHex(secret, body.emailHash);
+	const subjectNameHash = await hmacHex(secret, body.nameHash as string);
+	const subjectEmailHash = await hmacHex(secret, body.emailHash as string);
 	const subjectCpfHash = body.cpfHash
 		? await hmacHex(secret, body.cpfHash)
 		: undefined;
@@ -227,23 +284,9 @@ export async function handleConsentAudit(
 	request: Request,
 	env: Env,
 ): Promise<Response> {
-	if (!isAllowedOrigin(request)) {
-		return Response.json({ error: "forbidden-origin" }, { status: 403 });
-	}
-
-	const secret = getHashSecret(env);
-	if (!secret) {
-		return Response.json({ error: "secret-unavailable" }, { status: 503 });
-	}
-
-	const ip = request.headers.get("CF-Connecting-IP") ?? "";
-	const ua = request.headers.get("user-agent") ?? "";
-	const ipHash = await hmacShort(secret, ip || "anon");
-	const uaHash = await hmacShort(secret, ua || "anon");
-
-	if (!(await checkRateLimit(env, ipHash, "audit"))) {
-		return Response.json({ error: "rate-limited" }, { status: 429 });
-	}
+	const pre = await lgpdPrelude(request, env, "audit");
+	if (pre instanceof Response) return pre;
+	const { ipHash, uaHash } = pre;
 
 	let body: ConsentAuditBody;
 	try {
@@ -252,18 +295,12 @@ export async function handleConsentAudit(
 		return Response.json({ error: "invalid-json" }, { status: 400 });
 	}
 
-	if (
-		!body.id ||
-		!UUID_RE.test(body.id) ||
-		!body.version ||
-		typeof body.version !== "string" ||
-		body.version.length > 32 ||
-		!body.categories ||
-		typeof body.categories !== "object" ||
-		!body.method ||
-		!["accept-all", "reject-all", "custom"].includes(body.method)
-	) {
-		return Response.json({ error: "invalid-payload" }, { status: 400 });
+	const invalidField = validateConsentAudit(body);
+	if (invalidField) {
+		return Response.json(
+			{ error: "invalid-payload", field: invalidField },
+			{ status: 400 },
+		);
 	}
 
 	// Validate caller-supplied timestamp: must be ISO 8601 UTC and not in
@@ -273,7 +310,11 @@ export async function handleConsentAudit(
 	if (body.ts && typeof body.ts === "string" && ISO_TS_RE.test(body.ts)) {
 		const supplied = new Date(body.ts).getTime();
 		const now = Date.now();
-		if (!Number.isNaN(supplied) && supplied <= now + 5 * 60_000 && supplied >= now - 24 * 60 * 60_000) {
+		if (
+			!Number.isNaN(supplied) &&
+			supplied <= now + 5 * 60_000 &&
+			supplied >= now - 24 * 60 * 60_000
+		) {
 			auditTs = body.ts;
 		}
 	}
@@ -290,10 +331,7 @@ export async function handleConsentAudit(
 
 	const kv = env.LGPD_KV as KVNamespace | undefined;
 	if (kv) {
-		await kv.put(
-			`consent-audit:${body.id}`,
-			JSON.stringify(auditRecord),
-		);
+		await kv.put(`consent-audit:${body.id}`, JSON.stringify(auditRecord));
 	}
 
 	console.log(
