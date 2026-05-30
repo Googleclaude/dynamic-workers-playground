@@ -2,7 +2,41 @@ interface GitHubContent {
   name: string;
   path: string;
   type: "file" | "dir";
+  size?: number;
   download_url?: string;
+}
+
+// Guardrails to prevent a single import from exhausting Worker resources or
+// tripping GitHub's rate limiter (SSRF/DoS hardening).
+const MAX_DEPTH = 12;
+const MAX_FILES = 500;
+const MAX_FILE_BYTES = 2 * 1024 * 1024; // 2 MiB per file
+const FETCH_CONCURRENCY = 8;
+const FETCH_TIMEOUT_MS = 15_000;
+
+function fetchWithTimeout(
+  input: string,
+  init?: RequestInit
+): Promise<Response> {
+  return fetch(input, { ...init, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+}
+
+// Strip a known directory prefix without the pitfalls of String.replace
+// (which only replaces the first occurrence and treats the needle literally).
+function stripBasePath(fullPath: string, basePath: string): string {
+  if (!basePath) return fullPath;
+  const prefix = `${basePath}/`;
+  return fullPath.startsWith(prefix) ? fullPath.slice(prefix.length) : fullPath;
+}
+
+async function runWithConcurrency<T>(
+  items: T[],
+  limit: number,
+  worker: (item: T) => Promise<void>
+): Promise<void> {
+  for (let i = 0; i < items.length; i += limit) {
+    await Promise.all(items.slice(i, i + limit).map(worker));
+  }
 }
 
 function parseGitHubUrl(urlString: string): {
@@ -48,12 +82,34 @@ async function fetchGitHubDirectory(
 ): Promise<Record<string, string>> {
   const files: Record<string, string> = {};
 
-  async function fetchDir(dirPath: string): Promise<void> {
+  async function addFile(item: GitHubContent): Promise<void> {
+    if (!item.download_url) return;
+    if (Object.keys(files).length >= MAX_FILES) {
+      throw new Error(`Import exceeds the ${MAX_FILES}-file limit.`);
+    }
+    if (item.size !== undefined && item.size > MAX_FILE_BYTES) {
+      // Skip oversized files rather than failing the whole import.
+      return;
+    }
+
+    const fileResponse = await fetchWithTimeout(item.download_url);
+    if (!fileResponse.ok) return;
+
+    const content = await fileResponse.text();
+    if (content.length > MAX_FILE_BYTES) return;
+    files[stripBasePath(item.path, basePath)] = content;
+  }
+
+  async function fetchDir(dirPath: string, depth: number): Promise<void> {
+    if (depth > MAX_DEPTH) {
+      throw new Error(`Import exceeds the maximum directory depth of ${MAX_DEPTH}.`);
+    }
+
     const apiUrl = dirPath
       ? `https://api.github.com/repos/${owner}/${repo}/contents/${dirPath}?ref=${branch}`
       : `https://api.github.com/repos/${owner}/${repo}/contents?ref=${branch}`;
 
-    const response = await fetch(apiUrl, {
+    const response = await fetchWithTimeout(apiUrl, {
       headers: {
         Accept: "application/vnd.github.v3+json",
         "User-Agent": "dynamic-workers-playground"
@@ -70,37 +126,22 @@ async function fetchGitHubDirectory(
     const contents = (await response.json()) as GitHubContent | GitHubContent[];
 
     if (!Array.isArray(contents)) {
-      if (contents.type === "file" && contents.download_url) {
-        const fileResponse = await fetch(contents.download_url);
-        if (fileResponse.ok) {
-          const content = await fileResponse.text();
-          const relativePath = basePath ? contents.path.replace(`${basePath}/`, "") : contents.path;
-          files[relativePath] = content;
-        }
+      if (contents.type === "file") {
+        await addFile(contents);
       }
       return;
     }
 
-    await Promise.all(
-      contents.map(async (item) => {
-        if (item.type === "file" && item.download_url) {
-          const fileResponse = await fetch(item.download_url);
-          if (fileResponse.ok) {
-            const content = await fileResponse.text();
-            const relativePath = basePath ? item.path.replace(`${basePath}/`, "") : item.path;
-            files[relativePath] = content;
-          }
-          return;
-        }
+    const fileItems = contents.filter((item) => item.type === "file");
+    const dirItems = contents.filter((item) => item.type === "dir");
 
-        if (item.type === "dir") {
-          await fetchDir(item.path);
-        }
-      })
+    await runWithConcurrency(fileItems, FETCH_CONCURRENCY, addFile);
+    await runWithConcurrency(dirItems, FETCH_CONCURRENCY, (item) =>
+      fetchDir(item.path, depth + 1)
     );
   }
 
-  await fetchDir(basePath);
+  await fetchDir(basePath, 0);
   return files;
 }
 
