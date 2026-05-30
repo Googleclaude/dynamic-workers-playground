@@ -10,6 +10,10 @@ const ALLOWED_DOWNLOAD_HOSTS = new Set([
   "api.github.com",
 ]);
 
+const MAX_DEPTH = 10;
+const MAX_FILES = 200;
+const MAX_TOTAL_BYTES = 5 * 1024 * 1024;
+
 function isSafeDownloadUrl(raw: string | undefined): boolean {
   if (!raw) return false;
   try {
@@ -65,8 +69,30 @@ async function fetchGitHubDirectory(
   basePath: string
 ): Promise<Record<string, string>> {
   const files: Record<string, string> = {};
+  let totalBytes = 0;
 
-  async function fetchDir(dirPath: string): Promise<void> {
+  async function addFile(path: string, downloadUrl: string): Promise<void> {
+    if (Object.keys(files).length >= MAX_FILES) {
+      throw new Error(`Import exceeds maximum of ${MAX_FILES} files.`);
+    }
+    const fileResponse = await fetch(downloadUrl);
+    if (!fileResponse.ok) return;
+    const content = await fileResponse.text();
+    totalBytes += content.length;
+    if (totalBytes > MAX_TOTAL_BYTES) {
+      throw new Error(
+        `Import exceeds maximum total size of ${MAX_TOTAL_BYTES} bytes.`
+      );
+    }
+    const relativePath = basePath ? path.replace(`${basePath}/`, "") : path;
+    files[relativePath] = content;
+  }
+
+  async function fetchDir(dirPath: string, depth: number): Promise<void> {
+    if (depth > MAX_DEPTH) {
+      throw new Error(`Import exceeds maximum directory depth of ${MAX_DEPTH}.`);
+    }
+
     const apiUrl = dirPath
       ? `https://api.github.com/repos/${owner}/${repo}/contents/${dirPath}?ref=${branch}`
       : `https://api.github.com/repos/${owner}/${repo}/contents?ref=${branch}`;
@@ -89,12 +115,7 @@ async function fetchGitHubDirectory(
 
     if (!Array.isArray(contents)) {
       if (contents.type === "file" && isSafeDownloadUrl(contents.download_url)) {
-        const fileResponse = await fetch(contents.download_url!);
-        if (fileResponse.ok) {
-          const content = await fileResponse.text();
-          const relativePath = basePath ? contents.path.replace(`${basePath}/`, "") : contents.path;
-          files[relativePath] = content;
-        }
+        await addFile(contents.path, contents.download_url!);
       }
       return;
     }
@@ -102,23 +123,18 @@ async function fetchGitHubDirectory(
     await Promise.all(
       contents.map(async (item) => {
         if (item.type === "file" && isSafeDownloadUrl(item.download_url)) {
-          const fileResponse = await fetch(item.download_url!);
-          if (fileResponse.ok) {
-            const content = await fileResponse.text();
-            const relativePath = basePath ? item.path.replace(`${basePath}/`, "") : item.path;
-            files[relativePath] = content;
-          }
+          await addFile(item.path, item.download_url!);
           return;
         }
 
         if (item.type === "dir") {
-          await fetchDir(item.path);
+          await fetchDir(item.path, depth + 1);
         }
       })
     );
   }
 
-  await fetchDir(basePath);
+  await fetchDir(basePath, 0);
   return files;
 }
 
