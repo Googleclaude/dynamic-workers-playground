@@ -93,6 +93,12 @@ async function fetchGitHubDirectory(
   const files: Record<string, string> = {};
   let totalBytes = 0;
 
+  function relativize(path: string): string {
+    if (!basePath) return path;
+    const prefix = `${basePath}/`;
+    return path.startsWith(prefix) ? path.slice(prefix.length) : path;
+  }
+
   async function addFile(path: string, downloadUrl: string): Promise<void> {
     if (Object.keys(files).length >= MAX_FILES) {
       throw new Error(`Import exceeds maximum of ${MAX_FILES} files.`);
@@ -106,8 +112,7 @@ async function fetchGitHubDirectory(
         `Import exceeds maximum total size of ${MAX_TOTAL_BYTES} bytes.`
       );
     }
-    const relativePath = basePath ? path.replace(`${basePath}/`, "") : path;
-    files[relativePath] = content;
+    files[relativize(path)] = content;
   }
 
   async function fetchDir(dirPath: string, depth: number): Promise<void> {
